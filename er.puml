@@ -1,0 +1,135 @@
+@startuml
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+
+' =========================
+' Entities
+' =========================
+
+entity "users" as users {
+  * id : uuid <<PK>>
+  --
+  name : text
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+}
+
+entity "daily_logs" as daily_logs {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  log_date : date
+  role : text
+  day_fact : text
+  keywords : text[]
+  thought : text
+  mood : text
+  mood_reason : text?
+  action : text
+  free_memo_raw : text?
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+  --
+  UNIQUE(user_id, log_date)
+}
+
+entity "daily_log_generated_texts" as dlt {
+  * id : uuid <<PK>>
+  --
+  daily_log_id : uuid <<FK>>
+  model : text
+  prompt_version : text
+  generated_text : text
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+}
+
+entity "monthly_summaries" as ms {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  year_month : text
+  generated_text : text
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+  --
+  UNIQUE(user_id, year_month)
+}
+
+entity "novels" as novels {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  start_date : date
+  end_date : date
+  style : text
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+}
+
+entity "novel_generations" as ng {
+  * id : uuid <<PK>>
+  --
+  novel_id : uuid <<FK>>
+  model : text
+  prompt_version : text
+  generated_text : text
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+}
+
+entity "subscriptions" as subs {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  plan : text
+  started_at : timestamp
+  ended_at : timestamp?
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+}
+
+entity "payments" as pay {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  amount : int
+  currency : text
+  purpose : text
+  created_at : timestamp
+  updated_at : timestamp?
+  is_deleted : boolean
+  version_number : int
+}
+
+' =========================
+' Relationships
+' =========================
+
+users ||--o{ daily_logs : "user_id"
+daily_logs ||--o{ dlt : "daily_log_id"
+
+users ||--o{ ms : "user_id"
+
+users ||--o{ novels : "user_id"
+novels ||--o{ ng : "novel_id"
+
+users ||--o{ subs : "user_id"
+users ||--o{ pay : "user_id"
+
+@enduml
