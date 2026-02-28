@@ -8,11 +8,11 @@ const router = express.Router();
 // ★ 試験期間用：ハードコード
 const TEST_USERS = {
   yosuke: {
-    userId: "baa16ad9-0db2-4818-95b5-2f5c893911d3",
+    userId: "39d68eb1-80af-4499-862e-3677eb7efa55",
     name: "Yosuke Narumi",
   },
   chieko: {
-    userId: "c944214c-a62a-4f7e-8b53-1b26ef3c3402",
+    userId: "54e7b5ab-29dd-4cd5-9551-6b3dae16746d",
     name: "Chieko Narumi",
   },
 };
