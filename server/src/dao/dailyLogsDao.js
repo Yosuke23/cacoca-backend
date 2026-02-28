@@ -58,3 +58,18 @@ export async function findTodayLogs(user_id, log_date) {
 
   return result.rows;
 }
+// ユーザーのカウントを返す
+export async function countLogsByUserAndDate(userId, logDate) {
+  const result = await pool.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM daily_logs
+    WHERE user_id = $1
+      AND log_date = $2
+      AND is_deleted = false
+    `,
+    [userId, logDate],
+  );
+
+  return result.rows[0].count;
+}

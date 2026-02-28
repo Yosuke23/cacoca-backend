@@ -4,6 +4,7 @@ import {
   insertDailyLog,
   findTodayLogs,
   findDailyLogById,
+  countLogsByUserAndDate,
 } from "../dao/dailyLogsDao.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
 
@@ -26,10 +27,15 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 今日のログ取得
-    const todayLogs = await findTodayLogs(user_id, log_date);
+    // -------------------------
+    // ① 今日のログ件数取得
+    // -------------------------
+    const count = await countLogsByUserAndDate(user_id, log_date);
 
-    if (todayLogs.length >= 1) {
+    // -------------------------
+    // ② 1件以上なら有料判定
+    // -------------------------
+    if (count >= 1) {
       const isPro = await isUserPro(user_id);
 
       if (!isPro) {
@@ -42,6 +48,9 @@ router.post("/", async (req, res) => {
       }
     }
 
+    // -------------------------
+    // ③ 保存
+    // -------------------------
     const saved = await insertDailyLog({
       user_id,
       log_date,
