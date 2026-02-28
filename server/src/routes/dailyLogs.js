@@ -1,49 +1,56 @@
 // server/src/routes/dailyLogs.js
 import express from "express";
-import { insertDailyLog, findDailyLogById } from "../dao/dailyLogsDao.js";
-import { insertGeneratedText } from "../dao/dailyLogGeneratedTextsDao.js";
-import { generateText } from "../services/llmClient.js";
-import { buildDailyTextPrompt } from "../services/dailyTextPrompt.js";
-import { parseGeneratedText } from "../services/parseGeneratedText.js";
+import {
+  insertDailyLog,
+  findTodayLogs,
+  findDailyLogById,
+} from "../dao/dailyLogsDao.js";
+import { isUserPro } from "../dao/subscriptionsDao.js";
 
 const router = express.Router();
 
 /**
  * =====================================================
  * POST /daily-logs
- * 設問フローのrawを保存
+ * 保存のみ
  * =====================================================
  */
 router.post("/", async (req, res) => {
   try {
-    const { user_id, log_date, events, message_to_tomorrow, free_memo_raw } =
-      req.body;
+    const { user_id, log_date, payload } = req.body;
 
-    if (!user_id || !log_date) {
+    if (!user_id || !log_date || !payload) {
       return res.status(400).json({
         error: true,
-        message: "user_id and log_date are required",
+        message: "user_id, log_date, payload are required",
       });
     }
 
-    if (!Array.isArray(events)) {
-      return res.status(400).json({
-        error: true,
-        message: "events must be an array",
-      });
+    // 今日のログ取得
+    const todayLogs = await findTodayLogs(user_id, log_date);
+
+    if (todayLogs.length >= 1) {
+      const isPro = await isUserPro(user_id);
+
+      if (!isPro) {
+        return res.status(403).json({
+          error: true,
+          code: "DAILY_LIMIT_EXCEEDED",
+          message:
+            "本日のログはすでに作成済みです。有料プランで複数作成できます。",
+        });
+      }
     }
 
-    const dailyLog = await insertDailyLog({
+    const saved = await insertDailyLog({
       user_id,
       log_date,
-      events,
-      message_to_tomorrow,
-      free_memo_raw,
+      payload,
     });
 
     return res.status(201).json({
       message: "daily log saved",
-      data: dailyLog,
+      data: saved,
     });
   } catch (error) {
     console.error("POST /daily-logs error:", error);
@@ -56,68 +63,69 @@ router.post("/", async (req, res) => {
 
 /**
  * =====================================================
- * POST /daily-logs/:id/generate
- * 設問フロー用 日記生成
+ * GET /daily-logs/today?user_id=xxx
+ * 今日のログ一覧取得
  * =====================================================
  */
-router.post("/:id/generate", async (req, res) => {
-  const { id } = req.params;
-
+router.get("/today", async (req, res) => {
   try {
-    // ---------------------
-    // raw 取得
-    // ---------------------
-    const dailyLog = await findDailyLogById(id);
+    const { user_id } = req.query;
 
-    if (!dailyLog) {
+    if (!user_id) {
+      return res.status(400).json({
+        error: true,
+        message: "user_id is required",
+      });
+    }
+
+    const now = new Date();
+    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const today = jst.toISOString().slice(0, 10);
+
+    const logs = await findTodayLogs(user_id, today);
+
+    return res.json({
+      message: "today logs fetched",
+      count: logs.length,
+      data: logs,
+    });
+  } catch (error) {
+    console.error("GET /daily-logs/today error:", error);
+    return res.status(500).json({
+      error: true,
+      message: "failed to fetch today logs",
+    });
+  }
+});
+
+/**
+ * =====================================================
+ * GET /daily-logs/:id
+ * 詳細取得
+ * =====================================================
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const log = await findDailyLogById(id);
+
+    if (!log) {
       return res.status(404).json({
         error: true,
         message: "daily log not found",
       });
     }
 
-    // ---------------------
-    // prompt 種別決定（FIX）
-    // ---------------------
-    const promptType = "daily_log_v1";
-    const promptVersion = "v1";
-
-    // ---------------------
-    // プロンプト構築
-    // ---------------------
-    const prompt = buildDailyTextPrompt(dailyLog);
-
-    // ---------------------
-    // LLM生成
-    // ---------------------
-    const rawText = await generateText(prompt);
-
-    // ---------------------
-    // ★ title / body 分離
-    // ---------------------
-    const { title, body } = parseGeneratedText(rawText);
-
-    // ---------------------
-    // 生成結果保存
-    // ---------------------
-    const saved = await insertGeneratedText({
-      daily_log_id: dailyLog.id,
-      model: "gemma-3-27b-it",
-      prompt_type: promptType,
-      prompt_version: promptVersion,
-      title: title, // ← 分離後 title
-      generated_text: body, // ← 分離後 body
-    });
-
     return res.json({
-      message: "daily log generated",
-      data: saved,
+      message: "daily log fetched",
+      data: log,
     });
   } catch (error) {
-    console.error("POST /daily-logs/:id/generate error:", error);
+    console.error("GET /daily-logs/:id error:", error);
     return res.status(500).json({
       error: true,
-      message: "failed to generate daily log",
+      message: "failed to fetch daily log",
     });
   }
 });
