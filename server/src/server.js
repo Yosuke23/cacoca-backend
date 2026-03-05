@@ -22,14 +22,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// Warm up for render free plan※Warm up だけは IPフィルタの前に置く（=除外される）
+app.use("/warmup", warmupRouter);
 // ★ IPフィルタをすべてのAPIに適用
 app.use(ipFilter);
 
 // 商用向け改修時外す
 app.use("/test-users", testUsersRouter);
-
-// Warm up for render free plan
-app.use("/warmup", warmupRouter);
 
 // API routes
 app.use("/daily-logs", dailyLogsRouter);
