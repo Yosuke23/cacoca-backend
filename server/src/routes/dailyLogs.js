@@ -9,8 +9,56 @@ import {
   findDailyLogsByUser,
 } from "../dao/dailyLogsDao.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
+import { analyzeDailyLogPayload } from "../services/dailyLogAnalysisService.js";
+import {
+  deleteLightAnalysisByDailyLogId,
+  insertLightAnalysis,
+} from "../dao/dailyLogLightAnalysisDao.js";
+import {
+  deletePeopleByDailyLogId,
+  insertPeople,
+} from "../dao/dailyLogPeopleDao.js";
+import {
+  deletePlacesByDailyLogId,
+  insertPlaces,
+} from "../dao/dailyLogPlacesDao.js";
 
 const router = express.Router();
+
+/**
+ * 抽出結果を保存
+ *
+ * 方針：
+ * - 日記保存成功後に呼ぶ
+ * - 失敗しても日記保存は成功扱い
+ * - 再実行時は既存抽出結果を削除して再INSERT
+ *
+ * @param {string} dailyLogId
+ * @param {unknown} payload
+ */
+async function saveDerivedAnalysis(dailyLogId, payload) {
+  const analysis = await analyzeDailyLogPayload(payload);
+
+  await deleteLightAnalysisByDailyLogId(dailyLogId);
+  await deletePeopleByDailyLogId(dailyLogId);
+  await deletePlacesByDailyLogId(dailyLogId);
+
+  await insertLightAnalysis({
+    daily_log_id: dailyLogId,
+    one_line_summary: analysis.one_line_summary,
+    keywords: null,
+    emotion_tags: null,
+    confidence_score: null,
+  });
+
+  if (analysis.people.length > 0) {
+    await insertPeople(dailyLogId, analysis.people);
+  }
+
+  if (analysis.places.length > 0) {
+    await insertPlaces(dailyLogId, analysis.places);
+  }
+}
 
 /**
  * =====================================================
@@ -29,14 +77,10 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // -------------------------
-    // ① 今日のログ件数取得
-    // -------------------------
+    // ① 当日のログ件数取得
     const count = await countLogsByUserAndDate(user_id, log_date);
 
-    // -------------------------
     // ② 1件以上なら有料判定
-    // -------------------------
     if (count >= 1) {
       const isPro = await isUserPro(user_id);
 
@@ -50,14 +94,19 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // -------------------------
     // ③ 保存
-    // -------------------------
     const saved = await insertDailyLog({
       user_id,
       log_date,
       payload,
     });
+
+    // ④ 抽出結果保存（失敗しても日記保存は成功扱い）
+    try {
+      await saveDerivedAnalysis(saved.id, payload);
+    } catch (analysisError) {
+      console.error("POST /daily-logs analysis error:", analysisError);
+    }
 
     return res.status(201).json({
       message: "daily log saved",
@@ -172,6 +221,13 @@ router.put("/:id", async (req, res) => {
         error: true,
         message: "daily log not found or not allowed",
       });
+    }
+
+    // 抽出結果再保存（失敗しても更新自体は成功扱い）
+    try {
+      await saveDerivedAnalysis(updated.id, payload);
+    } catch (analysisError) {
+      console.error("PUT /daily-logs/:id analysis error:", analysisError);
     }
 
     return res.json({

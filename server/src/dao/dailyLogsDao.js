@@ -1,10 +1,10 @@
 // server/src/dao/dailyLogsDao.js
 import { pool } from "../db/pool.js";
+import { payloadToSearchText } from "../utils/dailyLogPayload.js";
 
 /**
  * 日記一覧取得
  */
-
 export async function findDailyLogsByUser(user_id) {
   const result = await pool.query(
     `
@@ -14,6 +14,7 @@ export async function findDailyLogsByUser(user_id) {
       log_date,
       payload,
       title,
+      generated_text,
       created_at,
       updated_at
     FROM daily_logs
@@ -37,17 +38,21 @@ export async function insertDailyLog({ user_id, log_date, payload }) {
     throw new Error("insertDailyLog: user_id, log_date, payload are required");
   }
 
+  const searchText = payloadToSearchText(payload);
+
   const result = await pool.query(
     `
     INSERT INTO daily_logs (
       user_id,
       log_date,
-      payload
+      payload,
+      search_text,
+      search_text_updated_at
     )
-    VALUES ($1,$2,$3)
+    VALUES ($1, $2, $3::jsonb, $4, now())
     RETURNING *
     `,
-    [user_id, log_date, JSON.stringify(payload)],
+    [user_id, log_date, JSON.stringify(payload), searchText],
   );
 
   return result.rows[0];
@@ -62,6 +67,7 @@ export async function findDailyLogByIdAndUser(id, user_id) {
       log_date,
       payload,
       title,
+      generated_text,
       created_at,
       updated_at
     FROM daily_logs
@@ -79,7 +85,15 @@ export async function findDailyLogByIdAndUser(id, user_id) {
 export async function findTodayLogs(user_id, log_date) {
   const result = await pool.query(
     `
-    SELECT *
+    SELECT
+      id,
+      user_id,
+      log_date,
+      payload,
+      title,
+      generated_text,
+      created_at,
+      updated_at
     FROM daily_logs
     WHERE user_id = $1
       AND log_date = $2
@@ -101,12 +115,16 @@ export async function updateDailyLogByIdAndUser(
   payload,
   title = null,
 ) {
+  const searchText = payloadToSearchText(payload);
+
   const result = await pool.query(
     `
     UPDATE daily_logs
     SET
-      payload = $3,
+      payload = $3::jsonb,
       title = $4,
+      search_text = $5,
+      search_text_updated_at = now(),
       updated_at = now(),
       version_number = version_number + 1
     WHERE id = $1
@@ -114,7 +132,7 @@ export async function updateDailyLogByIdAndUser(
       AND is_deleted = false
     RETURNING *
     `,
-    [id, user_id, payload, title],
+    [id, user_id, JSON.stringify(payload), title, searchText],
   );
 
   return result.rows[0] ?? null;
