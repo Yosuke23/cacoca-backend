@@ -17,24 +17,15 @@ import {
 import {
   deleteAiCommentsByDailyLogId,
   insertAiComment,
+  findLatestAiCommentByDailyLogId,
 } from "../dao/dailyLogAiCommentsDao.js";
+import { getAiCommentEnabledByUserId } from "../dao/usersDao.js";
 
 const router = express.Router();
 
-/**
- * SUMMARY + COMMENT を保存
- *
- * 方針：
- * - 日記保存成功後に呼ぶ
- * - 失敗しても日記保存自体は成功扱い
- * - 再実行時は既存の summary / comment を削除して再INSERT
- *
- * @param {string} dailyLogId
- * @param {unknown} payload
- * @returns {Promise<{ one_line_summary: string | null, ai_comment: object | null }>}
- */
-async function saveDerivedAnalysis(dailyLogId, payload) {
+async function saveDerivedAnalysis(userId, dailyLogId, payload) {
   const analysis = await analyzeDailyLogPayload(payload);
+  const aiCommentEnabled = await getAiCommentEnabledByUserId(userId);
 
   await deleteLightAnalysisByDailyLogId(dailyLogId);
   await deleteAiCommentsByDailyLogId(dailyLogId);
@@ -49,7 +40,7 @@ async function saveDerivedAnalysis(dailyLogId, payload) {
 
   let aiComment = null;
 
-  if (analysis.comment_text) {
+  if (aiCommentEnabled && analysis.comment_text) {
     aiComment = await insertAiComment({
       daily_log_id: dailyLogId,
       comment_text: analysis.comment_text,
@@ -63,14 +54,12 @@ async function saveDerivedAnalysis(dailyLogId, payload) {
   return {
     one_line_summary: analysis.one_line_summary,
     ai_comment: aiComment,
+    ai_comment_enabled: Boolean(aiCommentEnabled),
   };
 }
 
 /**
- * =====================================================
  * POST /daily-logs
- * 保存のみ
- * =====================================================
  */
 router.post("/", async (req, res) => {
   try {
@@ -83,10 +72,8 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ① 当日のログ件数取得
     const count = await countLogsByUserAndDate(user_id, log_date);
 
-    // ② 1件以上なら有料判定
     if (count >= 1) {
       const isPro = await isUserPro(user_id);
 
@@ -100,21 +87,20 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // ③ 日記本体保存
     const saved = await insertDailyLog({
       user_id,
       log_date,
       payload,
     });
 
-    // ④ summary + comment 保存（失敗しても日記保存は成功扱い）
     let derived = {
       one_line_summary: null,
       ai_comment: null,
+      ai_comment_enabled: true,
     };
 
     try {
-      derived = await saveDerivedAnalysis(saved.id, payload);
+      derived = await saveDerivedAnalysis(user_id, saved.id, payload);
     } catch (analysisError) {
       console.error("POST /daily-logs analysis error:", analysisError);
     }
@@ -139,10 +125,7 @@ router.post("/", async (req, res) => {
 });
 
 /**
- * =====================================================
- * GET /daily-logs?user_id=xxx
- * 全ログ一覧取得（論理削除除外）
- * =====================================================
+ * GET /daily-logs
  */
 router.get("/", async (req, res) => {
   try {
@@ -172,10 +155,7 @@ router.get("/", async (req, res) => {
 });
 
 /**
- * =====================================================
- * GET /daily-logs/today?user_id=xxx
- * 今日のログ一覧取得
- * =====================================================
+ * GET /daily-logs/today
  */
 router.get("/today", async (req, res) => {
   try {
@@ -209,10 +189,58 @@ router.get("/today", async (req, res) => {
 });
 
 /**
- * =====================================================
+ * GET /daily-logs/:id/ai-comment
+ */
+router.get("/:id/ai-comment", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user_id } = req.query;
+
+    if (!user_id) {
+      return res.status(400).json({
+        error: true,
+        message: "user_id is required",
+      });
+    }
+
+    const log = await findDailyLogByIdAndUser(id, user_id);
+    if (!log) {
+      return res.status(404).json({
+        error: true,
+        message: "daily log not found",
+      });
+    }
+
+    const aiCommentEnabled = await getAiCommentEnabledByUserId(user_id);
+    if (!aiCommentEnabled) {
+      return res.json({
+        message: "ai comment fetched",
+        data: null,
+      });
+    }
+
+    const comment = await findLatestAiCommentByDailyLogId(id);
+
+    return res.json({
+      message: "ai comment fetched",
+      data: comment
+        ? {
+            id: comment.id,
+            comment_text: comment.comment_text,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error("GET /daily-logs/:id/ai-comment error:", error);
+    return res.status(500).json({
+      error: true,
+      message: "failed to fetch ai comment",
+    });
+  }
+});
+
+/**
  * PUT /daily-logs/:id
- * 更新（編集）
- * =====================================================
  */
 router.put("/:id", async (req, res) => {
   try {
@@ -240,9 +268,8 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    // summary + comment 再保存（失敗しても更新自体は成功扱い）
     try {
-      await saveDerivedAnalysis(updated.id, payload);
+      await saveDerivedAnalysis(user_id, updated.id, payload);
     } catch (analysisError) {
       console.error("PUT /daily-logs/:id analysis error:", analysisError);
     }
@@ -261,10 +288,7 @@ router.put("/:id", async (req, res) => {
 });
 
 /**
- * =====================================================
  * GET /daily-logs/:id
- * 詳細取得
- * =====================================================
  */
 router.get("/:id", async (req, res) => {
   try {

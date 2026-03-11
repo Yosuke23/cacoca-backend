@@ -10,6 +10,7 @@ import { checkDbConnection } from "./db/pool.js";
 import dailyLogsRouter from "./routes/dailyLogs.js";
 import warmupRouter from "./routes/warmup.js";
 import testUsersRouter from "./routes/testUsers.js"; // 商用向け改修時外す
+import usersRouter from "./routes/users.js";
 
 const app = express();
 app.use(cors());
@@ -32,6 +33,8 @@ app.use("/test-users", testUsersRouter);
 
 // API routes
 app.use("/daily-logs", dailyLogsRouter);
+// ユーザーステータス取得
+app.use("/users", usersRouter);
 
 // Health check（Render が使用）
 app.get("/", (req, res) => {

@@ -3,7 +3,6 @@ import { pool } from "../db/pool.js";
 
 /**
  * 日記単位のAIコメントを削除
- * 試験運用では再生成時に削除 → 再INSERT で扱う
  */
 export async function deleteAiCommentsByDailyLogId(dailyLogId) {
   if (!dailyLogId) {
@@ -21,15 +20,6 @@ export async function deleteAiCommentsByDailyLogId(dailyLogId) {
 
 /**
  * AIコメント保存
- *
- * @param {object} params
- * @param {string} params.daily_log_id
- * @param {string} params.comment_text
- * @param {string|null} [params.model]
- * @param {string|null} [params.prompt_version]
- * @param {string} [params.status]
- * @param {string|null} [params.error_message]
- * @returns {Promise<object>}
  */
 export async function insertAiComment(params) {
   const {
