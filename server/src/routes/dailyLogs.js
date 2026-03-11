@@ -15,33 +15,29 @@ import {
   insertLightAnalysis,
 } from "../dao/dailyLogLightAnalysisDao.js";
 import {
-  deletePeopleByDailyLogId,
-  insertPeople,
-} from "../dao/dailyLogPeopleDao.js";
-import {
-  deletePlacesByDailyLogId,
-  insertPlaces,
-} from "../dao/dailyLogPlacesDao.js";
+  deleteAiCommentsByDailyLogId,
+  insertAiComment,
+} from "../dao/dailyLogAiCommentsDao.js";
 
 const router = express.Router();
 
 /**
- * 抽出結果を保存
+ * SUMMARY + COMMENT を保存
  *
  * 方針：
  * - 日記保存成功後に呼ぶ
- * - 失敗しても日記保存は成功扱い
- * - 再実行時は既存抽出結果を削除して再INSERT
+ * - 失敗しても日記保存自体は成功扱い
+ * - 再実行時は既存の summary / comment を削除して再INSERT
  *
  * @param {string} dailyLogId
  * @param {unknown} payload
+ * @returns {Promise<{ one_line_summary: string | null, ai_comment: object | null }>}
  */
 async function saveDerivedAnalysis(dailyLogId, payload) {
   const analysis = await analyzeDailyLogPayload(payload);
 
   await deleteLightAnalysisByDailyLogId(dailyLogId);
-  await deletePeopleByDailyLogId(dailyLogId);
-  await deletePlacesByDailyLogId(dailyLogId);
+  await deleteAiCommentsByDailyLogId(dailyLogId);
 
   await insertLightAnalysis({
     daily_log_id: dailyLogId,
@@ -51,13 +47,23 @@ async function saveDerivedAnalysis(dailyLogId, payload) {
     confidence_score: null,
   });
 
-  if (analysis.people.length > 0) {
-    await insertPeople(dailyLogId, analysis.people);
+  let aiComment = null;
+
+  if (analysis.comment_text) {
+    aiComment = await insertAiComment({
+      daily_log_id: dailyLogId,
+      comment_text: analysis.comment_text,
+      model: "gemma-3-27b-it",
+      prompt_version: "daily-summary-comment-v1",
+      status: "generated",
+      error_message: null,
+    });
   }
 
-  if (analysis.places.length > 0) {
-    await insertPlaces(dailyLogId, analysis.places);
-  }
+  return {
+    one_line_summary: analysis.one_line_summary,
+    ai_comment: aiComment,
+  };
 }
 
 /**
@@ -94,16 +100,21 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // ③ 保存
+    // ③ 日記本体保存
     const saved = await insertDailyLog({
       user_id,
       log_date,
       payload,
     });
 
-    // ④ 抽出結果保存（失敗しても日記保存は成功扱い）
+    // ④ summary + comment 保存（失敗しても日記保存は成功扱い）
+    let derived = {
+      one_line_summary: null,
+      ai_comment: null,
+    };
+
     try {
-      await saveDerivedAnalysis(saved.id, payload);
+      derived = await saveDerivedAnalysis(saved.id, payload);
     } catch (analysisError) {
       console.error("POST /daily-logs analysis error:", analysisError);
     }
@@ -111,6 +122,12 @@ router.post("/", async (req, res) => {
     return res.status(201).json({
       message: "daily log saved",
       data: saved,
+      ai_comment: derived.ai_comment
+        ? {
+            id: derived.ai_comment.id,
+            comment_text: derived.ai_comment.comment_text,
+          }
+        : null,
     });
   } catch (error) {
     console.error("POST /daily-logs error:", error);
@@ -223,7 +240,7 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    // 抽出結果再保存（失敗しても更新自体は成功扱い）
+    // summary + comment 再保存（失敗しても更新自体は成功扱い）
     try {
       await saveDerivedAnalysis(updated.id, payload);
     } catch (analysisError) {

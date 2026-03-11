@@ -7,9 +7,8 @@ import { payloadToAnalysisSourceText } from "../utils/dailyLogPayload.js";
  * daily log analysis service
  * =====================================================
  * 役割：
- * - daily_logs.payload から LLM抽出に必要な情報を取り出す
- * - daily_summary / people / places を抽出する
- * - 保存しやすい形に整形して返す
+ * - 毎回保存時：SUMMARY + COMMENT を1回のプロンプトで生成
+ * - 将来拡張：PEOPLE / PLACES 集約抽出の共通パーサにも使う
  * =====================================================
  */
 
@@ -23,45 +22,78 @@ function normalizeText(value) {
 }
 
 /**
- * 行配列から空要素を除去
- * @param {string[]} lines
+ * 空文字や空行を除去した行配列へ
+ * @param {string} text
  * @returns {string[]}
  */
-function compactLines(lines) {
-  return lines.map((line) => line.trim()).filter(Boolean);
+function toNonEmptyLines(text) {
+  return normalizeText(text)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 /**
- * 単純な名前正規化
- * 試験運用では最小限でよい
- *
- * @param {string} value
- * @returns {string}
+ * セクション本文を整える
+ * @param {string} text
+ * @returns {string|null}
  */
-function normalizeName(value) {
-  return normalizeText(value).toLowerCase();
+function normalizeSectionBody(text) {
+  const normalized = normalizeText(text);
+  return normalized || null;
 }
 
 /**
- * LLMの箇条書き出力を配列へ
+ * タグ区切りレスポンスをパースする
  *
- * 想定入力例:
- * - 田中さん
- * - 佐藤さん
+ * 期待例:
+ * [SUMMARY]
+ * 今日は...
+ *
+ * [COMMENT]
+ * おつかれさまでした...
+ *
+ * @param {string} text
+ * @returns {Record<string, string>}
+ */
+function parseTaggedSections(text) {
+  const sections = {};
+  const normalized = text.replace(/\r\n/g, "\n");
+
+  const tagPattern = /^\[([A-Z_]+)\]\s*$/gm;
+  const matches = [...normalized.matchAll(tagPattern)];
+
+  if (matches.length === 0) {
+    return sections;
+  }
+
+  for (let i = 0; i < matches.length; i += 1) {
+    const current = matches[i];
+    const next = matches[i + 1];
+
+    const tag = current[1];
+    const startIndex = current.index + current[0].length;
+    const endIndex = next ? next.index : normalized.length;
+
+    const body = normalized.slice(startIndex, endIndex).trim();
+    sections[tag] = body;
+  }
+
+  return sections;
+}
+
+/**
+ * 箇条書きを配列へ
  *
  * @param {string} text
  * @returns {string[]}
  */
 function parseBulletLines(text) {
-  const normalized = normalizeText(text);
+  if (!text) return [];
 
-  if (!normalized) {
-    return [];
-  }
-
-  return compactLines(
-    normalized.split("\n").map((line) => line.replace(/^[-・*]\s*/, "").trim()),
-  );
+  return toNonEmptyLines(text)
+    .map((line) => line.replace(/^[-・*]\s*/, "").trim())
+    .filter(Boolean);
 }
 
 /**
@@ -74,76 +106,84 @@ function uniqueStrings(values) {
 }
 
 /**
- * daily summary 抽出
- * 30〜50文字程度 / 誇張なし
- *
- * @param {string} sourceText
- * @returns {Promise<string|null>}
+ * 正規化（最小）
+ * @param {string} value
+ * @returns {string}
  */
-async function extractDailySummary(sourceText) {
-  if (!sourceText) {
-    return null;
-  }
-
-  const prompt = `
-あなたは日記の内容を短く要約するアシスタントです。
-以下の日記内容を、誇張せず自然な日本語で30〜50文字程度の1文に要約してください。
-出力は要約文のみで、説明や前置きは不要です。
-
-[日記内容]
-${sourceText}
-  `.trim();
-
-  const text = await generateText(prompt);
-  const summary = normalizeText(text);
-
-  return summary || null;
+function normalizeName(value) {
+  return normalizeText(value).toLowerCase();
 }
 
 /**
- * あった人・話した人 抽出
- *
- * 方針：
- * - 対面だけでなく、会話・電話・オンライン・メッセージ相手も含む
- * - ニュース内人物や無関係な有名人は除外
- * - 出力は1行1件の箇条書き
+ * SUMMARY + COMMENT を1回のプロンプトで生成
  *
  * @param {string} sourceText
- * @returns {Promise<Array<{ person_name: string, normalized_name: string, confidence: number | null }>>}
+ * @returns {Promise<{ one_line_summary: string | null, comment_text: string | null, raw_text: string }>}
  */
-async function extractPeople(sourceText) {
+async function extractSummaryAndComment(sourceText) {
   if (!sourceText) {
-    return [];
+    return {
+      one_line_summary: null,
+      comment_text: null,
+      raw_text: "",
+    };
   }
 
   const prompt = `
-あなたは日記から人物を抽出するアシスタントです。
-以下の日記内容から、その日にユーザーが「あった人・話した人」を抽出してください。
+あなたは日記内容から事実を整理し、要約とコメントを作るアシスタントです。
+まず日記を読み、明示されている内容だけを把握してください。推測は禁止です。
 
-抽出対象:
-- 実際に会った相手
-- 話した相手
-- 電話した相手
-- オンラインで会話した相手
-- メッセージ等でやり取りした相手
+次のルールで最終出力を作ってください。
 
-除外対象:
-- ニュースや話題に出ただけの人物
-- 有名人や第三者で、当日の関わりがない人物
-- 相手として明確でない抽象表現
+[SUMMARY]
+- 誇張しない
+- 30〜50文字程度
+- 要約文のみ
+- コメント口調にしない
 
-出力ルール:
-- 1行に1人
-- 箇条書き形式
-- 人名や呼び方だけを出力
-- 前置きや説明は不要
-- 該当者がいなければ何も出力しない
+[COMMENT]
+- 1〜2文
+- 45〜80文字程度
+- 自然でやさしい日本語
+- 日記内容に少し触れる
+- 過剰に大げさにしない
+- 説教しない
+- 前向きだが、軽く寄り添う程度にする
+
+出力形式は必ず次のみとしてください。
+説明、補足、前置きは禁止です。
+
+[SUMMARY]
+...
+
+[COMMENT]
+...
 
 [日記内容]
 ${sourceText}
   `.trim();
 
-  const text = await generateText(prompt);
+  const rawText = await generateText(prompt);
+  const sections = parseTaggedSections(rawText);
+
+  const oneLineSummary = normalizeSectionBody(sections.SUMMARY ?? "");
+  const commentText = normalizeSectionBody(sections.COMMENT ?? "");
+
+  return {
+    one_line_summary: oneLineSummary,
+    comment_text: commentText,
+    raw_text: rawText,
+  };
+}
+
+/**
+ * 将来の PEOPLE / PLACES 集約抽出でも使える補助関数
+ * 今回はまだ routes からは使わない
+ *
+ * @param {string} text
+ * @returns {Array<{ person_name: string, normalized_name: string, confidence: number | null }>}
+ */
+export function parsePeopleSection(text) {
   const parsed = uniqueStrings(parseBulletLines(text));
 
   return parsed.map((personName) => ({
@@ -154,47 +194,13 @@ ${sourceText}
 }
 
 /**
- * 行った場所 抽出
+ * 将来の PEOPLE / PLACES 集約抽出でも使える補助関数
+ * 今回はまだ routes からは使わない
  *
- * 方針：
- * - 実際に行った・滞在した・訪れた場所
- * - 単なる話題の場所やニュースの地名は除外
- *
- * @param {string} sourceText
- * @returns {Promise<Array<{ place_name: string, normalized_name: string, confidence: number | null }>>}
+ * @param {string} text
+ * @returns {Array<{ place_name: string, normalized_name: string, confidence: number | null }>}
  */
-async function extractPlaces(sourceText) {
-  if (!sourceText) {
-    return [];
-  }
-
-  const prompt = `
-あなたは日記から場所を抽出するアシスタントです。
-以下の日記内容から、その日にユーザーが実際に行った場所、滞在した場所、訪れた場所を抽出してください。
-
-抽出対象:
-- 実際に行った場所
-- 滞在した場所
-- 訪れた場所
-- 行動の舞台になった場所
-
-除外対象:
-- 話題に出ただけの地名
-- ニュースや一般論の場所
-- 実際に行ったか不明な場所
-
-出力ルール:
-- 1行に1件
-- 箇条書き形式
-- 場所名だけを出力
-- 前置きや説明は不要
-- 該当がなければ何も出力しない
-
-[日記内容]
-${sourceText}
-  `.trim();
-
-  const text = await generateText(prompt);
+export function parsePlacesSection(text) {
   const parsed = uniqueStrings(parseBulletLines(text));
 
   return parsed.map((placeName) => ({
@@ -205,14 +211,14 @@ ${sourceText}
 }
 
 /**
- * 1件の日記payloadを分析
+ * 毎回保存時の payload 分析
  *
  * @param {unknown} payload
  * @returns {Promise<{
  *   analysis_source_text: string,
  *   one_line_summary: string | null,
- *   people: Array<{ person_name: string, normalized_name: string, confidence: number | null }>,
- *   places: Array<{ place_name: string, normalized_name: string, confidence: number | null }>
+ *   comment_text: string | null,
+ *   raw_text: string
  * }>}
  */
 export async function analyzeDailyLogPayload(payload) {
@@ -222,30 +228,29 @@ export async function analyzeDailyLogPayload(payload) {
     return {
       analysis_source_text: "",
       one_line_summary: null,
-      people: [],
-      places: [],
+      comment_text: null,
+      raw_text: "",
     };
   }
 
-  const [oneLineSummary, people, places] = await Promise.all([
-    extractDailySummary(analysisSourceText).catch((error) => {
-      console.error("extractDailySummary error:", error);
-      return null;
-    }),
-    extractPeople(analysisSourceText).catch((error) => {
-      console.error("extractPeople error:", error);
-      return [];
-    }),
-    extractPlaces(analysisSourceText).catch((error) => {
-      console.error("extractPlaces error:", error);
-      return [];
-    }),
-  ]);
+  try {
+    const summaryAndComment =
+      await extractSummaryAndComment(analysisSourceText);
 
-  return {
-    analysis_source_text: analysisSourceText,
-    one_line_summary: oneLineSummary,
-    people,
-    places,
-  };
+    return {
+      analysis_source_text: analysisSourceText,
+      one_line_summary: summaryAndComment.one_line_summary,
+      comment_text: summaryAndComment.comment_text,
+      raw_text: summaryAndComment.raw_text,
+    };
+  } catch (error) {
+    console.error("analyzeDailyLogPayload error:", error);
+
+    return {
+      analysis_source_text: analysisSourceText,
+      one_line_summary: null,
+      comment_text: null,
+      raw_text: "",
+    };
+  }
 }
