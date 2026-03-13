@@ -33,8 +33,16 @@ function formatDateToYmd(date) {
 }
 
 function parseYmdToDate(ymd) {
-  const [year, month, day] = ymd.split("-").map(Number);
-  return new Date(year, month - 1, day);
+  if (ymd instanceof Date) {
+    return new Date(ymd.getFullYear(), ymd.getMonth(), ymd.getDate());
+  }
+
+  if (typeof ymd === "string") {
+    const [year, month, day] = ymd.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  throw new Error(`parseYmdToDate: unsupported value ${String(ymd)}`);
 }
 
 function addDays(ymd, days) {
