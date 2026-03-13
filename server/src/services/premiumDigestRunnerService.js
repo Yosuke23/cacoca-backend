@@ -27,8 +27,16 @@ import { findDigestPlacesByUserAndDateRange } from "../dao/digestPlacesDao.js";
  */
 
 function parseYmdToDate(ymd) {
-  const [year, month, day] = ymd.split("-").map(Number);
-  return new Date(year, month - 1, day);
+  if (ymd instanceof Date) {
+    return new Date(ymd.getFullYear(), ymd.getMonth(), ymd.getDate());
+  }
+
+  if (typeof ymd === "string") {
+    const [year, month, day] = ymd.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  throw new Error(`parseYmdToDate: unsupported value ${String(ymd)}`);
 }
 
 function formatDateToYmd(date) {
@@ -36,6 +44,18 @@ function formatDateToYmd(date) {
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function normalizeYmd(value) {
+  if (value instanceof Date) {
+    return formatDateToYmd(value);
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  throw new Error(`normalizeYmd: unsupported value ${String(value)}`);
 }
 
 function addDays(ymd, days) {
@@ -57,7 +77,8 @@ function getWeekEndSunday(weekStartYmd) {
 }
 
 function getPreviousWeekRange(triggerDate) {
-  const currentWeekStart = getWeekStartMonday(triggerDate);
+  const triggerYmd = normalizeYmd(triggerDate);
+  const currentWeekStart = getWeekStartMonday(triggerYmd);
   const previousWeekEnd = addDays(currentWeekStart, -1);
   const previousWeekStart = addDays(previousWeekEnd, -6);
 
@@ -68,13 +89,15 @@ function getPreviousWeekRange(triggerDate) {
 }
 
 function getCurrentMonthStart(triggerDate) {
-  const date = parseYmdToDate(triggerDate);
+  const triggerYmd = normalizeYmd(triggerDate);
+  const date = parseYmdToDate(triggerYmd);
   date.setDate(1);
   return formatDateToYmd(date);
 }
 
 function getPreviousMonthRange(triggerDate) {
-  const currentMonthStart = getCurrentMonthStart(triggerDate);
+  const triggerYmd = normalizeYmd(triggerDate);
+  const currentMonthStart = getCurrentMonthStart(triggerYmd);
   const previousMonthEnd = addDays(currentMonthStart, -1);
   const previousMonthStartDate = parseYmdToDate(previousMonthEnd);
   previousMonthStartDate.setDate(1);
