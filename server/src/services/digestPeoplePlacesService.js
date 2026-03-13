@@ -137,10 +137,18 @@ async function resolveDigestRange(userId, triggerLogDate) {
   const latestDigestEndDate = await findLatestDigestEndDate(userId);
 
   if (latestDigestEndDate) {
+    const latestDigestEndYmd =
+      latestDigestEndDate instanceof Date
+        ? formatDateToYmd(latestDigestEndDate)
+        : latestDigestEndDate;
+
     return {
-      digest_start_date: addDays(latestDigestEndDate, 1),
-      digest_end_date: triggerLogDate,
-      latest_digest_end_date: latestDigestEndDate,
+      digest_start_date: addDays(latestDigestEndYmd, 1),
+      digest_end_date:
+        triggerLogDate instanceof Date
+          ? formatDateToYmd(triggerLogDate)
+          : triggerLogDate,
+      latest_digest_end_date: latestDigestEndYmd,
     };
   }
 
@@ -150,9 +158,15 @@ async function resolveDigestRange(userId, triggerLogDate) {
     return null;
   }
 
+  const firstLogYmd =
+    firstLogDate instanceof Date ? formatDateToYmd(firstLogDate) : firstLogDate;
+
   return {
-    digest_start_date: firstLogDate,
-    digest_end_date: triggerLogDate,
+    digest_start_date: firstLogYmd,
+    digest_end_date:
+      triggerLogDate instanceof Date
+        ? formatDateToYmd(triggerLogDate)
+        : triggerLogDate,
     latest_digest_end_date: null,
   };
 }
