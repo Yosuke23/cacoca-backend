@@ -10,6 +10,7 @@ import {
 } from "../dao/dailyLogsDao.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
 import { analyzeDailyLogPayload } from "../services/dailyLogAnalysisService.js";
+import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
 import {
   deleteLightAnalysisByDailyLogId,
   insertLightAnalysis,
@@ -103,6 +104,11 @@ router.post("/", async (req, res) => {
       derived = await saveDerivedAnalysis(user_id, saved.id, payload);
     } catch (analysisError) {
       console.error("POST /daily-logs analysis error:", analysisError);
+    }
+    try {
+      await runDerivedJobsIfNeeded(user_id, log_date);
+    } catch (derivedJobsError) {
+      console.error("POST /daily-logs derived jobs error:", derivedJobsError);
     }
 
     return res.status(201).json({

@@ -80,3 +80,38 @@ export async function findLightAnalysisByDailyLogId(dailyLogId) {
 
   return result.rows[0] ?? null;
 }
+
+/**
+ * 指定期間の日記に紐づく light_analysis を取得
+ */
+export async function findLightAnalysisByUserAndDateRange(
+  userId,
+  startDate,
+  endDate,
+) {
+  if (!userId || !startDate || !endDate) {
+    throw new Error(
+      "findLightAnalysisByUserAndDateRange: userId, startDate, endDate are required",
+    );
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      a.*,
+      d.log_date
+    FROM daily_log_light_analysis a
+    INNER JOIN daily_logs d
+      ON a.daily_log_id = d.id
+    WHERE d.user_id = $1
+      AND d.log_date >= $2
+      AND d.log_date <= $3
+      AND d.is_deleted = false
+      AND a.is_deleted = false
+    ORDER BY d.log_date ASC, a.created_at ASC
+    `,
+    [userId, startDate, endDate],
+  );
+
+  return result.rows;
+}

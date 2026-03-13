@@ -153,3 +153,97 @@ export async function countLogsByUserAndDate(userId, logDate) {
 
   return result.rows[0].count;
 }
+
+/**
+ * ユーザーの最初の日記日を取得
+ */
+export async function findFirstLogDateByUser(userId) {
+  if (!userId) {
+    throw new Error("findFirstLogDateByUser: userId is required");
+  }
+
+  const result = await pool.query(
+    `
+    SELECT log_date
+    FROM daily_logs
+    WHERE user_id = $1
+      AND is_deleted = false
+    ORDER BY log_date ASC
+    LIMIT 1
+    `,
+    [userId],
+  );
+
+  return result.rows[0]?.log_date ?? null;
+}
+
+/**
+ * 指定期間の日記を取得
+ */
+export async function findDailyLogsByUserAndDateRange(
+  userId,
+  startDate,
+  endDate,
+) {
+  if (!userId || !startDate || !endDate) {
+    throw new Error(
+      "findDailyLogsByUserAndDateRange: userId, startDate, endDate are required",
+    );
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      id,
+      user_id,
+      log_date,
+      payload,
+      title,
+      generated_text,
+      created_at,
+      updated_at,
+      search_text
+    FROM daily_logs
+    WHERE user_id = $1
+      AND log_date >= $2
+      AND log_date <= $3
+      AND is_deleted = false
+    ORDER BY log_date ASC, created_at ASC
+    `,
+    [userId, startDate, endDate],
+  );
+
+  return result.rows;
+}
+
+/**
+ * 指定月に、そのユーザーの日記が存在するか
+ *
+ * monthStartDate: YYYY-MM-01
+ * nextMonthStartDate: 翌月1日
+ */
+export async function countDailyLogsByUserAndMonthRange(
+  userId,
+  monthStartDate,
+  nextMonthStartDate,
+) {
+  if (!userId || !monthStartDate || !nextMonthStartDate) {
+    throw new Error(
+      "countDailyLogsByUserAndMonthRange: userId, monthStartDate, nextMonthStartDate are required",
+    );
+  }
+
+  const result = await pool.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM daily_logs
+    WHERE user_id = $1
+      AND log_date >= $2
+      AND log_date < $3
+      AND is_deleted = false
+    `,
+    [userId, monthStartDate, nextMonthStartDate],
+  );
+
+  return result.rows[0].count;
+}
