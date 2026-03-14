@@ -54,7 +54,7 @@ export async function generateText(prompt) {
   llmCallCount += 1;
   const callNo = llmCallCount;
   console.log(
-    `[LLM] #${callNo} start model=${modelName} promptLength=${prompt.length}`,
+    `[LLM] #${callNo} start model="gemma-3-27b-it" promptLength=${prompt.length}`,
   );
   try {
     const result = await model.generateContent(prompt);
