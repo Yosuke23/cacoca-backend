@@ -46,11 +46,6 @@ function getCurrentMonthRange(triggerDate) {
   };
 }
 
-function parseYmdToDate(ymd) {
-  const [year, month, day] = ymd.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
 function formatDateToYmd(date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
