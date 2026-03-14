@@ -3,8 +3,6 @@ import express from "express";
 import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
 import { findLatestDigestPeopleRowsByUserId } from "../dao/digestPeopleDao.js";
 import { findLatestDigestPlacesRowsByUserId } from "../dao/digestPlacesDao.js";
-import { findLatestWeeklyDigestByUserId } from "../dao/weeklyDigestsDao.js";
-import { findLatestMonthlyDigestByUserId } from "../dao/monthlyDigestsDao.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
 
 const router = express.Router();
@@ -13,6 +11,51 @@ function formatTodayJst() {
   const now = new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 10);
+}
+
+function parseYmdToDate(ymd) {
+  const [year, month, day] = ymd.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateToYmd(date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(ymd, days) {
+  const date = parseYmdToDate(ymd);
+  date.setDate(date.getDate() + days);
+  return formatDateToYmd(date);
+}
+
+function getWeekStartMonday(ymd) {
+  const date = parseYmdToDate(ymd);
+  const day = date.getDay(); // Sun=0 ... Sat=6
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return formatDateToYmd(date);
+}
+
+function getPreviousWeekRange(triggerDate) {
+  const currentWeekStart = getWeekStartMonday(triggerDate);
+  const previousWeekEnd = addDays(currentWeekStart, -1);
+  const previousWeekStart = addDays(previousWeekEnd, -6);
+
+  return {
+    week_start_date: previousWeekStart,
+    week_end_date: previousWeekEnd,
+  };
+}
+
+function getPreviousMonthYearMonth(triggerDate) {
+  const date = parseYmdToDate(triggerDate);
+  date.setDate(1);
+  date.setMonth(date.getMonth() - 1);
+
+  return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}`;
 }
 
 /**
@@ -44,12 +87,21 @@ router.get("/", async (req, res) => {
 
     const pro = await isUserPro(user_id);
 
+    const previousWeek = getPreviousWeekRange(triggerDate);
+    const previousYearMonth = getPreviousMonthYearMonth(triggerDate);
     const [peopleRows, placeRows, weeklyDigest, monthlyDigest] =
       await Promise.all([
         findLatestDigestPeopleRowsByUserId(user_id),
         findLatestDigestPlacesRowsByUserId(user_id),
-        pro ? findLatestWeeklyDigestByUserId(user_id) : Promise.resolve(null),
-        pro ? findLatestMonthlyDigestByUserId(user_id) : Promise.resolve(null),
+        pro
+          ? findWeeklyDigestByUserAndWeekStartDate(
+              user_id,
+              previousWeek.week_start_date,
+            )
+          : Promise.resolve(null),
+        pro
+          ? findMonthlyDigestByUserAndYearMonth(user_id, previousYearMonth)
+          : Promise.resolve(null),
       ]);
 
     return res.json({
