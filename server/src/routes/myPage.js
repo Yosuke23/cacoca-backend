@@ -27,6 +27,37 @@ function formatDateToYmd(date) {
   return `${year}-${month}-${day}`;
 }
 
+function getCurrentMonthRange(triggerDate) {
+  const date = parseYmdToDate(triggerDate);
+
+  const monthStartDate = new Date(date.getFullYear(), date.getMonth(), 1);
+  const nextMonthStartDate = new Date(
+    date.getFullYear(),
+    date.getMonth() + 1,
+    1,
+  );
+  const monthEndDate = new Date(
+    nextMonthStartDate.getTime() - 24 * 60 * 60 * 1000,
+  );
+
+  return {
+    month_start_date: formatDateToYmd(monthStartDate),
+    month_end_date: formatDateToYmd(monthEndDate),
+  };
+}
+
+function parseYmdToDate(ymd) {
+  const [year, month, day] = ymd.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateToYmd(date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function addDays(ymd, days) {
   const date = parseYmdToDate(ymd);
   date.setDate(date.getDate() + days);
@@ -91,10 +122,20 @@ router.get("/", async (req, res) => {
 
     const previousWeek = getPreviousWeekRange(triggerDate);
     const previousYearMonth = getPreviousMonthYearMonth(triggerDate);
+    const currentMonth = getCurrentMonthRange(triggerDate);
+
     const [peopleRows, placeRows, weeklyDigest, monthlyDigest] =
       await Promise.all([
-        findLatestDigestPeopleRowsByUserId(user_id),
-        findLatestDigestPlacesRowsByUserId(user_id),
+        findDigestPeopleByUserAndDateRange(
+          user_id,
+          currentMonth.month_start_date,
+          currentMonth.month_end_date,
+        ),
+        findDigestPlacesByUserAndDateRange(
+          user_id,
+          currentMonth.month_start_date,
+          currentMonth.month_end_date,
+        ),
         pro
           ? findWeeklyDigestByUserAndWeekStartDate(
               user_id,
@@ -112,14 +153,14 @@ router.get("/", async (req, res) => {
         is_pro: pro,
         people: peopleRows.map((row) => ({
           id: row.id,
-          digest_start_date: row.digest_start_date,
-          digest_end_date: row.digest_end_date,
+          digest_start_date: currentMonth.month_start_date,
+          digest_end_date: currentMonth.month_end_date,
           person_name: row.person_name,
         })),
         places: placeRows.map((row) => ({
           id: row.id,
-          digest_start_date: row.digest_start_date,
-          digest_end_date: row.digest_end_date,
+          digest_start_date: currentMonth.month_start_date,
+          digest_end_date: currentMonth.month_end_date,
           place_name: row.place_name,
         })),
         weekly_digest: weeklyDigest
