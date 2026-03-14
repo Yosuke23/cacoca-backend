@@ -1,11 +1,11 @@
 // server/src/routes/myPage.js
 import express from "express";
 import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
-import { findLatestDigestPeopleRowsByUserId } from "../dao/digestPeopleDao.js";
-import { findLatestDigestPlacesRowsByUserId } from "../dao/digestPlacesDao.js";
 import { findWeeklyDigestByUserAndWeekStartDate } from "../dao/weeklyDigestsDao.js";
 import { findMonthlyDigestByUserAndYearMonth } from "../dao/monthlyDigestsDao.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
+import { findDigestPeopleByUserAndDateRange } from "../dao/digestPeopleDao.js";
+import { findDigestPlacesByUserAndDateRange } from "../dao/digestPlacesDao.js";
 
 const router = express.Router();
 
