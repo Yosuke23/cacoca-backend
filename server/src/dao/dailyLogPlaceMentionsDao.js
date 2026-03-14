@@ -122,20 +122,23 @@ export async function findUniquePlaceMentionsByUserAndMonth(
 
   const result = await pool.query(
     `
-    SELECT
-      MIN(id) AS id,
+    SELECT DISTINCT ON (place_name)
+      id,
       place_name,
-      MIN(log_date) AS first_log_date
+      log_date AS first_log_date
     FROM daily_log_place_mentions
     WHERE user_id = $1
       AND log_date >= $2
       AND log_date <= $3
       AND is_deleted = false
-    GROUP BY place_name
-    ORDER BY first_log_date ASC, place_name ASC
+    ORDER BY place_name ASC, log_date ASC, created_at ASC
     `,
     [userId, monthStartDate, monthEndDate],
   );
 
-  return result.rows;
+  return result.rows.sort((a, b) => {
+    if (a.first_log_date < b.first_log_date) return -1;
+    if (a.first_log_date > b.first_log_date) return 1;
+    return a.place_name.localeCompare(b.place_name, "ja");
+  });
 }
