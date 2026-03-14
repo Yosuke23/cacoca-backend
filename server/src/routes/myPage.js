@@ -55,6 +55,7 @@ router.get("/", async (req, res) => {
     return res.json({
       message: "mypage data fetched",
       data: {
+        is_pro: pro,
         people: peopleRows.map((row) => ({
           id: row.id,
           digest_start_date: row.digest_start_date,
