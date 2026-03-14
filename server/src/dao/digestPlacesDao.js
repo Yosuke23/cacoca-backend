@@ -178,3 +178,33 @@ export async function findDigestPlacesPeriodByUserAndTargetDate(
 
   return result.rows[0] ?? null;
 }
+
+/**
+ * 最新期間の digest_places 一覧を取得
+ */
+export async function findLatestDigestPlacesRowsByUserId(userId) {
+  if (!userId) {
+    throw new Error("findLatestDigestPlacesRowsByUserId: userId is required");
+  }
+
+  const latest = await findLatestDigestPlacesByUserId(userId);
+
+  if (!latest) {
+    return [];
+  }
+
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM digest_places
+    WHERE user_id = $1
+      AND digest_start_date = $2
+      AND digest_end_date = $3
+      AND is_deleted = false
+    ORDER BY created_at ASC
+    `,
+    [userId, latest.digest_start_date, latest.digest_end_date],
+  );
+
+  return result.rows;
+}
