@@ -5,6 +5,7 @@ import { findLatestDigestPeopleRowsByUserId } from "../dao/digestPeopleDao.js";
 import { findLatestDigestPlacesRowsByUserId } from "../dao/digestPlacesDao.js";
 import { findLatestWeeklyDigestByUserId } from "../dao/weeklyDigestsDao.js";
 import { findLatestMonthlyDigestByUserId } from "../dao/monthlyDigestsDao.js";
+import { isUserPro } from "../dao/subscriptionsDao.js";
 
 const router = express.Router();
 
@@ -41,12 +42,14 @@ router.get("/", async (req, res) => {
       console.error("GET /mypage derived jobs error:", derivedJobsError);
     }
 
+    const pro = await isUserPro(user_id);
+
     const [peopleRows, placeRows, weeklyDigest, monthlyDigest] =
       await Promise.all([
         findLatestDigestPeopleRowsByUserId(user_id),
         findLatestDigestPlacesRowsByUserId(user_id),
-        findLatestWeeklyDigestByUserId(user_id),
-        findLatestMonthlyDigestByUserId(user_id),
+        pro ? findLatestWeeklyDigestByUserId(user_id) : Promise.resolve(null),
+        pro ? findLatestMonthlyDigestByUserId(user_id) : Promise.resolve(null),
       ]);
 
     return res.json({

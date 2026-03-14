@@ -38,7 +38,7 @@ const model = genAI.getGenerativeModel({
 // =========================
 // 公開API
 // =========================
-
+let llmCallCount = 0;
 /**
  * generateText
  *
@@ -51,7 +51,11 @@ export async function generateText(prompt) {
   if (!prompt || typeof prompt !== "string") {
     throw new Error("Prompt must be a non-empty string");
   }
-
+  llmCallCount += 1;
+  const callNo = llmCallCount;
+  console.log(
+    `[LLM] #${callNo} start model=${modelName} promptLength=${prompt.length}`,
+  );
   try {
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -61,10 +65,13 @@ export async function generateText(prompt) {
     if (!text || typeof text !== "string") {
       throw new Error("LLM returned empty text");
     }
-
+    console.log(`[LLM] #${callNo} success outputLength=${text.length}`);
     return text;
   } catch (error) {
     console.error("LLM generateText error:", error);
+    console.error(
+      `[LLM] #${callNo} error message=${error instanceof Error ? error.message : String(error)}`,
+    );
     throw error;
   }
 }
