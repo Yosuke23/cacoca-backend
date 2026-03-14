@@ -11,6 +11,7 @@ import {
 import { isUserPro } from "../dao/subscriptionsDao.js";
 import { analyzeDailyLogPayload } from "../services/dailyLogAnalysisService.js";
 import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
+import { syncDerivedDataAfterEdit } from "../services/dailyLogEditSyncService.js";
 import {
   deleteLightAnalysisByDailyLogId,
   insertLightAnalysis,
@@ -278,6 +279,11 @@ router.put("/:id", async (req, res) => {
       await saveDerivedAnalysis(user_id, updated.id, payload);
     } catch (analysisError) {
       console.error("PUT /daily-logs/:id analysis error:", analysisError);
+    }
+    try {
+      await syncDerivedDataAfterEdit(user_id, updated.log_date);
+    } catch (editSyncError) {
+      console.error("PUT /daily-logs/:id edit sync error:", editSyncError);
     }
 
     return res.json({
