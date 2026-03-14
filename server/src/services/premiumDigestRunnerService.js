@@ -23,6 +23,7 @@ import { findDigestPlacesByUserAndDateRange } from "../dao/digestPlacesDao.js";
  * 役割：
  * - 有料ユーザー向けの週次 / 月次集約を必要時のみ生成する
  * - weekly_digests / monthly_digests に保存する
+ * - 編集時には指定週 / 指定月を即再生成する
  * =====================================================
  */
 
@@ -88,6 +89,17 @@ function getPreviousWeekRange(triggerDate) {
   };
 }
 
+function getWeekRangeByTargetDate(targetDate) {
+  const targetYmd = normalizeYmd(targetDate);
+  const weekStartDate = getWeekStartMonday(targetYmd);
+  const weekEndDate = getWeekEndSunday(weekStartDate);
+
+  return {
+    week_start_date: weekStartDate,
+    week_end_date: weekEndDate,
+  };
+}
+
 function getCurrentMonthStart(triggerDate) {
   const triggerYmd = normalizeYmd(triggerDate);
   const date = parseYmdToDate(triggerYmd);
@@ -106,6 +118,26 @@ function getPreviousMonthRange(triggerDate) {
     target_year_month: `${previousMonthStartDate.getFullYear()}-${`${previousMonthStartDate.getMonth() + 1}`.padStart(2, "0")}`,
     month_start_date: formatDateToYmd(previousMonthStartDate),
     month_end_date: previousMonthEnd,
+  };
+}
+
+function getMonthRangeByTargetDate(targetDate) {
+  const targetYmd = normalizeYmd(targetDate);
+  const date = parseYmdToDate(targetYmd);
+  const monthStartDate = new Date(date.getFullYear(), date.getMonth(), 1);
+  const nextMonthStartDate = new Date(
+    date.getFullYear(),
+    date.getMonth() + 1,
+    1,
+  );
+  const monthEndDate = new Date(
+    nextMonthStartDate.getTime() - 24 * 60 * 60 * 1000,
+  );
+
+  return {
+    target_year_month: `${monthStartDate.getFullYear()}-${`${monthStartDate.getMonth() + 1}`.padStart(2, "0")}`,
+    month_start_date: formatDateToYmd(monthStartDate),
+    month_end_date: formatDateToYmd(monthEndDate),
   };
 }
 
@@ -197,6 +229,190 @@ async function collectDigestSourceMaterials(userId, startDate, endDate) {
   };
 }
 
+async function buildWeeklyDigestPayload(userId, weekStartDate, weekEndDate) {
+  const materials = await collectDigestSourceMaterials(
+    userId,
+    weekStartDate,
+    weekEndDate,
+  );
+
+  if (materials.logs.length === 0) {
+    return null;
+  }
+
+  const peopleSummary = buildPeopleSummary(materials.peopleRows);
+  const placesSummary = buildPlacesSummary(materials.placeRows);
+
+  const didSummary = await generateWeeklySummaryText({
+    rangeLabel: `${weekStartDate} 〜 ${weekEndDate}`,
+    searchTexts: materials.logs.map((log) => log.search_text).filter(Boolean),
+    oneLineSummaries: materials.lightAnalysisRows
+      .map((row) => row.one_line_summary)
+      .filter(Boolean),
+    peopleSummary,
+    placesSummary,
+  });
+
+  return {
+    user_id: userId,
+    week_start_date: weekStartDate,
+    week_end_date: weekEndDate,
+    did_summary: didSummary,
+    people_summary: peopleSummary,
+    places_summary: placesSummary,
+    free_note_summary: null,
+    source_log_count: materials.logs.length,
+  };
+}
+
+async function buildMonthlyDigestPayload(
+  userId,
+  targetYearMonth,
+  monthStartDate,
+  monthEndDate,
+) {
+  const materials = await collectDigestSourceMaterials(
+    userId,
+    monthStartDate,
+    monthEndDate,
+  );
+
+  if (materials.logs.length === 0) {
+    return null;
+  }
+
+  const peopleSummary = buildPeopleSummary(materials.peopleRows);
+  const placesSummary = buildPlacesSummary(materials.placeRows);
+
+  const summaryText = await generateMonthlySummaryText({
+    rangeLabel: `${monthStartDate} 〜 ${monthEndDate}`,
+    searchTexts: materials.logs.map((log) => log.search_text).filter(Boolean),
+    oneLineSummaries: materials.lightAnalysisRows
+      .map((row) => row.one_line_summary)
+      .filter(Boolean),
+    peopleSummary,
+    placesSummary,
+  });
+
+  return {
+    user_id: userId,
+    target_year_month: targetYearMonth,
+    month_start_date: monthStartDate,
+    month_end_date: monthEndDate,
+    summary_text: summaryText,
+    people_summary: peopleSummary,
+    places_summary: placesSummary,
+    source_log_count: materials.logs.length,
+  };
+}
+
+/**
+ * 指定週を即再生成（有料ユーザーのみ）
+ */
+export async function regenerateWeeklyDigestForTargetDateIfPro(
+  userId,
+  targetDate,
+) {
+  const pro = await isUserPro(userId);
+
+  if (!pro) {
+    return {
+      enabled: false,
+      ran: false,
+      week_start_date: null,
+      week_end_date: null,
+      source_log_count: 0,
+    };
+  }
+
+  const { week_start_date, week_end_date } =
+    getWeekRangeByTargetDate(targetDate);
+  const payload = await buildWeeklyDigestPayload(
+    userId,
+    week_start_date,
+    week_end_date,
+  );
+
+  if (!payload) {
+    await deleteWeeklyDigestByUserAndWeekStartDate(userId, week_start_date);
+
+    return {
+      enabled: true,
+      ran: false,
+      week_start_date,
+      week_end_date,
+      source_log_count: 0,
+    };
+  }
+
+  await deleteWeeklyDigestByUserAndWeekStartDate(userId, week_start_date);
+  await insertWeeklyDigest(payload);
+
+  return {
+    enabled: true,
+    ran: true,
+    week_start_date,
+    week_end_date,
+    source_log_count: payload.source_log_count,
+  };
+}
+
+/**
+ * 指定月を即再生成（有料ユーザーのみ）
+ */
+export async function regenerateMonthlyDigestForTargetDateIfPro(
+  userId,
+  targetDate,
+) {
+  const pro = await isUserPro(userId);
+
+  if (!pro) {
+    return {
+      enabled: false,
+      ran: false,
+      target_year_month: null,
+      month_start_date: null,
+      month_end_date: null,
+      source_log_count: 0,
+    };
+  }
+
+  const { target_year_month, month_start_date, month_end_date } =
+    getMonthRangeByTargetDate(targetDate);
+
+  const payload = await buildMonthlyDigestPayload(
+    userId,
+    target_year_month,
+    month_start_date,
+    month_end_date,
+  );
+
+  if (!payload) {
+    await deleteMonthlyDigestByUserAndYearMonth(userId, target_year_month);
+
+    return {
+      enabled: true,
+      ran: false,
+      target_year_month,
+      month_start_date,
+      month_end_date,
+      source_log_count: 0,
+    };
+  }
+
+  await deleteMonthlyDigestByUserAndYearMonth(userId, target_year_month);
+  await insertMonthlyDigest(payload);
+
+  return {
+    enabled: true,
+    ran: true,
+    target_year_month,
+    month_start_date,
+    month_end_date,
+    source_log_count: payload.source_log_count,
+  };
+}
+
 /**
  * 前週 weekly digest を必要時のみ生成
  */
@@ -217,13 +433,13 @@ async function runWeeklyDigestIfNeeded(userId, triggerDate) {
     };
   }
 
-  const materials = await collectDigestSourceMaterials(
+  const payload = await buildWeeklyDigestPayload(
     userId,
     week_start_date,
     week_end_date,
   );
 
-  if (materials.logs.length === 0) {
+  if (!payload) {
     return {
       ran: false,
       target_week_start: week_start_date,
@@ -232,34 +448,14 @@ async function runWeeklyDigestIfNeeded(userId, triggerDate) {
     };
   }
 
-  const didSummary = await generateWeeklySummaryText({
-    rangeLabel: `${week_start_date} 〜 ${week_end_date}`,
-    searchTexts: materials.logs.map((log) => log.search_text).filter(Boolean),
-    oneLineSummaries: materials.lightAnalysisRows
-      .map((row) => row.one_line_summary)
-      .filter(Boolean),
-    peopleSummary: buildPeopleSummary(materials.peopleRows),
-    placesSummary: buildPlacesSummary(materials.placeRows),
-  });
-
   await deleteWeeklyDigestByUserAndWeekStartDate(userId, week_start_date);
-
-  await insertWeeklyDigest({
-    user_id: userId,
-    week_start_date,
-    week_end_date,
-    did_summary: didSummary,
-    people_summary: buildPeopleSummary(materials.peopleRows),
-    places_summary: buildPlacesSummary(materials.placeRows),
-    free_note_summary: null,
-    source_log_count: materials.logs.length,
-  });
+  await insertWeeklyDigest(payload);
 
   return {
     ran: true,
     target_week_start: week_start_date,
     target_week_end: week_end_date,
-    source_log_count: materials.logs.length,
+    source_log_count: payload.source_log_count,
   };
 }
 
@@ -285,13 +481,14 @@ async function runMonthlyDigestIfNeeded(userId, triggerDate) {
     };
   }
 
-  const materials = await collectDigestSourceMaterials(
+  const payload = await buildMonthlyDigestPayload(
     userId,
+    target_year_month,
     month_start_date,
     month_end_date,
   );
 
-  if (materials.logs.length === 0) {
+  if (!payload) {
     return {
       ran: false,
       target_year_month,
@@ -301,35 +498,15 @@ async function runMonthlyDigestIfNeeded(userId, triggerDate) {
     };
   }
 
-  const summaryText = await generateMonthlySummaryText({
-    rangeLabel: `${month_start_date} 〜 ${month_end_date}`,
-    searchTexts: materials.logs.map((log) => log.search_text).filter(Boolean),
-    oneLineSummaries: materials.lightAnalysisRows
-      .map((row) => row.one_line_summary)
-      .filter(Boolean),
-    peopleSummary: buildPeopleSummary(materials.peopleRows),
-    placesSummary: buildPlacesSummary(materials.placeRows),
-  });
-
   await deleteMonthlyDigestByUserAndYearMonth(userId, target_year_month);
-
-  await insertMonthlyDigest({
-    user_id: userId,
-    target_year_month,
-    month_start_date,
-    month_end_date,
-    summary_text: summaryText,
-    people_summary: buildPeopleSummary(materials.peopleRows),
-    places_summary: buildPlacesSummary(materials.placeRows),
-    source_log_count: materials.logs.length,
-  });
+  await insertMonthlyDigest(payload);
 
   return {
     ran: true,
     target_year_month,
     month_start_date,
     month_end_date,
-    source_log_count: materials.logs.length,
+    source_log_count: payload.source_log_count,
   };
 }
 

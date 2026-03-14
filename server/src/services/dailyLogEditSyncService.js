@@ -10,8 +10,10 @@ import {
   deleteDigestPlacesByUserAndPeriod,
   insertDigestPlaces,
 } from "../dao/digestPlacesDao.js";
-import { deleteWeeklyDigestByUserAndWeekStartDate } from "../dao/weeklyDigestsDao.js";
-import { deleteMonthlyDigestByUserAndYearMonth } from "../dao/monthlyDigestsDao.js";
+import {
+  regenerateWeeklyDigestForTargetDateIfPro,
+  regenerateMonthlyDigestForTargetDateIfPro,
+} from "./premiumDigestRunnerService.js";
 
 function parseYmdToDate(ymd) {
   if (ymd instanceof Date) {
@@ -22,29 +24,9 @@ function parseYmdToDate(ymd) {
   return new Date(year, month - 1, day);
 }
 
-function formatDateToYmd(date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getWeekStartMonday(ymd) {
-  const date = parseYmdToDate(ymd);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
-  return formatDateToYmd(date);
-}
-
-function getTargetYearMonth(ymd) {
-  const date = parseYmdToDate(ymd);
-  return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}`;
-}
-
 /**
  * 編集した日付が含まれる people / places 集約期間を再生成し、
- * 該当週・該当月の要約は削除して次回再生成待ちにする
+ * 該当週・該当月の要約も即再生成する
  */
 export async function syncDerivedDataAfterEdit(userId, logDate) {
   if (!userId || !logDate) {
@@ -53,30 +35,36 @@ export async function syncDerivedDataAfterEdit(userId, logDate) {
     );
   }
 
-  const [peoplePeriod, placesPeriod] = await Promise.all([
-    findDigestPeoplePeriodByUserAndTargetDate(userId, logDate),
-    findDigestPlacesPeriodByUserAndTargetDate(userId, logDate),
-  ]);
+  const normalizedLogDate =
+    logDate instanceof Date
+      ? `${logDate.getFullYear()}-${`${logDate.getMonth() + 1}`.padStart(2, "0")}-${`${logDate.getDate()}`.padStart(2, "0")}`
+      : String(logDate);
 
-  const peopleDigestStartDate = peoplePeriod?.digest_start_date ?? null;
-  const peopleDigestEndDate = peoplePeriod?.digest_end_date ?? null;
-  const placesDigestStartDate = placesPeriod?.digest_start_date ?? null;
-  const placesDigestEndDate = placesPeriod?.digest_end_date ?? null;
+  const [peoplePeriod, placesPeriod] = await Promise.all([
+    findDigestPeoplePeriodByUserAndTargetDate(userId, normalizedLogDate),
+    findDigestPlacesPeriodByUserAndTargetDate(userId, normalizedLogDate),
+  ]);
 
   const ranges = new Map();
 
-  if (peopleDigestStartDate && peopleDigestEndDate) {
-    ranges.set(`${peopleDigestStartDate}_${peopleDigestEndDate}`, {
-      start: peopleDigestStartDate,
-      end: peopleDigestEndDate,
-    });
+  if (peoplePeriod?.digest_start_date && peoplePeriod?.digest_end_date) {
+    ranges.set(
+      `${peoplePeriod.digest_start_date}_${peoplePeriod.digest_end_date}`,
+      {
+        start: peoplePeriod.digest_start_date,
+        end: peoplePeriod.digest_end_date,
+      },
+    );
   }
 
-  if (placesDigestStartDate && placesDigestEndDate) {
-    ranges.set(`${placesDigestStartDate}_${placesDigestEndDate}`, {
-      start: placesDigestStartDate,
-      end: placesDigestEndDate,
-    });
+  if (placesPeriod?.digest_start_date && placesPeriod?.digest_end_date) {
+    ranges.set(
+      `${placesPeriod.digest_start_date}_${placesPeriod.digest_end_date}`,
+      {
+        start: placesPeriod.digest_start_date,
+        end: placesPeriod.digest_end_date,
+      },
+    );
   }
 
   for (const range of ranges.values()) {
@@ -110,15 +98,38 @@ export async function syncDerivedDataAfterEdit(userId, logDate) {
     }
   }
 
-  const weekStartDate = getWeekStartMonday(logDate);
-  const targetYearMonth = getTargetYearMonth(logDate);
-
-  await deleteWeeklyDigestByUserAndWeekStartDate(userId, weekStartDate);
-  await deleteMonthlyDigestByUserAndYearMonth(userId, targetYearMonth);
+  const [weeklyResult, monthlyResult] = await Promise.all([
+    regenerateWeeklyDigestForTargetDateIfPro(userId, normalizedLogDate).catch(
+      (error) => {
+        console.error(
+          "syncDerivedDataAfterEdit regenerateWeeklyDigestForTargetDateIfPro error:",
+          error,
+        );
+        return {
+          enabled: false,
+          ran: false,
+          error: true,
+        };
+      },
+    ),
+    regenerateMonthlyDigestForTargetDateIfPro(userId, normalizedLogDate).catch(
+      (error) => {
+        console.error(
+          "syncDerivedDataAfterEdit regenerateMonthlyDigestForTargetDateIfPro error:",
+          error,
+        );
+        return {
+          enabled: false,
+          ran: false,
+          error: true,
+        };
+      },
+    ),
+  ]);
 
   return {
     people_places_reranged: [...ranges.values()],
-    invalidated_week_start_date: weekStartDate,
-    invalidated_target_year_month: targetYearMonth,
+    weekly: weeklyResult,
+    monthly: monthlyResult,
   };
 }
