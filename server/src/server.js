@@ -12,7 +12,6 @@ import warmupRouter from "./routes/warmup.js";
 import testUsersRouter from "./routes/testUsers.js"; // 商用向け改修時外す
 import usersRouter from "./routes/users.js";
 import myPageRouter from "./routes/myPage.js";
-import myPageMonthlyEntitiesRouter from "./routes/myPageMonthlyEntities.js";
 
 const app = express();
 app.use(cors());
@@ -36,7 +35,6 @@ app.use("/test-users", testUsersRouter);
 // API routes
 app.use("/daily-logs", dailyLogsRouter);
 app.use("/mypage", myPageRouter);
-app.use("/mypage/monthly-entities", myPageMonthlyEntitiesRouter);
 // ユーザーステータス取得
 app.use("/users", usersRouter);
 

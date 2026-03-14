@@ -107,16 +107,6 @@ router.post("/", async (req, res) => {
       console.error("POST /daily-logs analysis error:", analysisError);
     }
     try {
-      await saveDailyLogMentions({
-        daily_log_id: saved.id,
-        user_id,
-        log_date,
-        payload,
-      });
-    } catch (mentionsError) {
-      console.error("POST /daily-logs mentions error:", mentionsError);
-    }
-    try {
       await runDerivedJobsIfNeeded(user_id, log_date);
     } catch (derivedJobsError) {
       console.error("POST /daily-logs derived jobs error:", derivedJobsError);
@@ -289,16 +279,6 @@ router.put("/:id", async (req, res) => {
       await saveDerivedAnalysis(user_id, updated.id, payload);
     } catch (analysisError) {
       console.error("PUT /daily-logs/:id analysis error:", analysisError);
-    }
-    try {
-      await saveDailyLogMentions({
-        daily_log_id: updated.id,
-        user_id,
-        log_date: updated.log_date,
-        payload,
-      });
-    } catch (mentionsError) {
-      console.error("PUT /daily-logs/:id mentions error:", mentionsError);
     }
     try {
       await syncDerivedDataAfterEdit(user_id, updated.log_date);
