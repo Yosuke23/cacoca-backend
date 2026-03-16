@@ -1,10 +1,8 @@
 // server/src/services/dailyLogAiCommentService.js
 import { generateText } from "./llmClient.js";
 import { payloadToAnalysisSourceText } from "./dailyLogTextSourceService.js";
-import {
-  upsertDailyLogAiComment,
-  findAiCommentEnabledByUserId,
-} from "../dao/dailyLogAiCommentsDao.js";
+import { upsertDailyLogAiComment } from "../dao/dailyLogAiCommentsDao.js";
+import { getAiCommentEnabledByUserId } from "../dao/usersDao.js";
 
 /**
  * =====================================================
@@ -46,7 +44,7 @@ export async function saveDailyLogAiComment(userId, dailyLogId, payload) {
     );
   }
 
-  const aiCommentEnabled = await findAiCommentEnabledByUserId(userId);
+  const aiCommentEnabled = await getAiCommentEnabledByUserId(userId);
 
   if (!aiCommentEnabled) {
     return {
