@@ -12,6 +12,10 @@ import warmupRouter from "./routes/warmup.js";
 import testUsersRouter from "./routes/testUsers.js"; // 商用向け改修時外す
 import usersRouter from "./routes/users.js";
 import myPageRouter from "./routes/myPage.js";
+import myPageRecentEntitiesRouter from "./routes/myPageRecentEntities.js";
+import myPageWeeklyRouter from "./routes/myPageWeekly.js";
+import myPageMonthlyRouter from "./routes/myPageMonthly.js";
+import myPageMonthlySummaryEntitiesRouter from "./routes/myPageMonthlySummaryEntities.js";
 
 const app = express();
 app.use(cors());
@@ -35,6 +39,11 @@ app.use("/test-users", testUsersRouter);
 // API routes
 app.use("/daily-logs", dailyLogsRouter);
 app.use("/mypage", myPageRouter);
+app.use("/mypage/recent-entities", myPageRecentEntitiesRouter);
+app.use("/mypage/weekly", myPageWeeklyRouter);
+app.use("/mypage/monthly", myPageMonthlyRouter);
+app.use("/mypage/monthly-summary-entities", myPageMonthlySummaryEntitiesRouter);
+
 // ユーザーステータス取得
 app.use("/users", usersRouter);
 

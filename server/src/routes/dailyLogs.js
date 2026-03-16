@@ -9,56 +9,13 @@ import {
   findDailyLogsByUser,
 } from "../dao/dailyLogsDao.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
-import { analyzeDailyLogPayload } from "../services/dailyLogAnalysisService.js";
 import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
 import { syncDerivedDataAfterEdit } from "../services/dailyLogEditSyncService.js";
-import {
-  deleteLightAnalysisByDailyLogId,
-  insertLightAnalysis,
-} from "../dao/dailyLogLightAnalysisDao.js";
-import {
-  deleteAiCommentsByDailyLogId,
-  insertAiComment,
-  findLatestAiCommentByDailyLogId,
-} from "../dao/dailyLogAiCommentsDao.js";
+import { saveDailyLogAiComment } from "../services/dailyLogAiCommentService.js";
+import { findLatestAiCommentByDailyLogId } from "../dao/dailyLogAiCommentsDao.js";
 import { getAiCommentEnabledByUserId } from "../dao/usersDao.js";
 
 const router = express.Router();
-
-async function saveDerivedAnalysis(userId, dailyLogId, payload) {
-  const analysis = await analyzeDailyLogPayload(payload);
-  const aiCommentEnabled = await getAiCommentEnabledByUserId(userId);
-
-  await deleteLightAnalysisByDailyLogId(dailyLogId);
-  await deleteAiCommentsByDailyLogId(dailyLogId);
-
-  await insertLightAnalysis({
-    daily_log_id: dailyLogId,
-    one_line_summary: analysis.one_line_summary,
-    keywords: null,
-    emotion_tags: null,
-    confidence_score: null,
-  });
-
-  let aiComment = null;
-
-  if (aiCommentEnabled && analysis.comment_text) {
-    aiComment = await insertAiComment({
-      daily_log_id: dailyLogId,
-      comment_text: analysis.comment_text,
-      model: "gemma-3-27b-it",
-      prompt_version: "daily-summary-comment-v1",
-      status: "generated",
-      error_message: null,
-    });
-  }
-
-  return {
-    one_line_summary: analysis.one_line_summary,
-    ai_comment: aiComment,
-    ai_comment_enabled: Boolean(aiCommentEnabled),
-  };
-}
 
 /**
  * POST /daily-logs
@@ -96,16 +53,29 @@ router.post("/", async (req, res) => {
     });
 
     let derived = {
-      one_line_summary: null,
       ai_comment: null,
       ai_comment_enabled: true,
     };
 
-    try {
-      derived = await saveDerivedAnalysis(user_id, saved.id, payload);
-    } catch (analysisError) {
-      console.error("POST /daily-logs analysis error:", analysisError);
+    const pro = await isUserPro(user_id);
+
+    if (pro) {
+      try {
+        const aiCommentResult = await saveDailyLogAiComment(
+          user_id,
+          saved.id,
+          payload,
+        );
+
+        derived = {
+          ai_comment: aiCommentResult.ai_comment,
+          ai_comment_enabled: aiCommentResult.ai_comment_enabled,
+        };
+      } catch (aiCommentError) {
+        console.error("POST /daily-logs ai comment error:", aiCommentError);
+      }
     }
+
     try {
       await runDerivedJobsIfNeeded(user_id, log_date);
     } catch (derivedJobsError) {
@@ -275,11 +245,16 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    try {
-      await saveDerivedAnalysis(user_id, updated.id, payload);
-    } catch (analysisError) {
-      console.error("PUT /daily-logs/:id analysis error:", analysisError);
+    const pro = await isUserPro(user_id);
+
+    if (pro) {
+      try {
+        await saveDailyLogAiComment(user_id, updated.id, payload);
+      } catch (aiCommentError) {
+        console.error("PUT /daily-logs/:id ai comment error:", aiCommentError);
+      }
     }
+
     try {
       await syncDerivedDataAfterEdit(user_id, updated.log_date);
     } catch (editSyncError) {
