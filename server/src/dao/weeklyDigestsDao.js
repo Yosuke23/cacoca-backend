@@ -123,3 +123,30 @@ export async function findLatestWeeklyDigestByUserId(userId) {
 
   return result.rows[0] ?? null;
 }
+
+export async function findWeeklyDigestsByUserAndDateRange(
+  userId,
+  startDate,
+  endDate,
+) {
+  if (!userId || !startDate || !endDate) {
+    throw new Error(
+      "findWeeklyDigestsByUserAndDateRange: userId, startDate, endDate are required",
+    );
+  }
+
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM weekly_digests
+    WHERE user_id = $1
+      AND week_end_date >= $2
+      AND week_start_date <= $3
+      AND is_deleted = false
+    ORDER BY week_start_date ASC, created_at ASC
+    `,
+    [userId, startDate, endDate],
+  );
+
+  return result.rows;
+}
