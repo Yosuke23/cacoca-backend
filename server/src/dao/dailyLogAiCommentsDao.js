@@ -77,3 +77,44 @@ export async function findLatestAiCommentByDailyLogId(dailyLogId) {
 
   return result.rows[0] ?? null;
 }
+
+export async function upsertDailyLogAiComment(userId, dailyLogId, commentText) {
+  if (!userId || !dailyLogId) {
+    throw new Error(
+      "upsertDailyLogAiComment: userId and dailyLogId are required",
+    );
+  }
+
+  await pool.query(
+    `
+    DELETE FROM daily_log_ai_comments
+    WHERE daily_log_id = $1
+    `,
+    [dailyLogId],
+  );
+
+  const result = await pool.query(
+    `
+    INSERT INTO daily_log_ai_comments (
+      daily_log_id,
+      comment_text,
+      model,
+      prompt_version,
+      status,
+      error_message
+    )
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING *
+    `,
+    [
+      dailyLogId,
+      commentText,
+      "gemma-3-27b-it",
+      "daily-ai-comment-v1",
+      "generated",
+      null,
+    ],
+  );
+
+  return result.rows[0];
+}
