@@ -1,6 +1,5 @@
 // server/src/services/premiumDigestRunnerService.js
 import { generateText } from "./llmClient.js";
-import { isUserPro } from "../dao/subscriptionsDao.js";
 import {
   findWeeklyDigestByUserAndWeekStartDate,
   findWeeklyDigestsByUserAndDateRange,
@@ -400,18 +399,6 @@ export async function regenerateWeeklyDigestForTargetDateIfPro(
   userId,
   targetDate,
 ) {
-  const pro = await isUserPro(userId);
-
-  if (!pro) {
-    return {
-      enabled: false,
-      ran: false,
-      week_start_date: null,
-      week_end_date: null,
-      source_log_count: 0,
-    };
-  }
-
   const { week_start_date, week_end_date } =
     getWeekRangeByTargetDate(targetDate);
   const payload = await buildWeeklyDigestPayload(
@@ -451,19 +438,6 @@ export async function regenerateMonthlyDigestForTargetDateIfPro(
   userId,
   targetDate,
 ) {
-  const pro = await isUserPro(userId);
-
-  if (!pro) {
-    return {
-      enabled: false,
-      ran: false,
-      target_year_month: null,
-      month_start_date: null,
-      month_end_date: null,
-      source_log_count: 0,
-    };
-  }
-
   const { target_year_month, month_start_date, month_end_date } =
     getMonthRangeByTargetDate(targetDate);
 
@@ -608,16 +582,6 @@ export async function runPremiumDigestsIfNeeded(userId, triggerDate) {
     throw new Error(
       "runPremiumDigestsIfNeeded: userId and triggerDate are required",
     );
-  }
-
-  const pro = await isUserPro(userId);
-
-  if (!pro) {
-    return {
-      enabled: false,
-      weekly: null,
-      monthly: null,
-    };
   }
 
   const [weekly, monthly] = await Promise.all([

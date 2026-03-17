@@ -1,6 +1,7 @@
 // server/src/routes/myPageMonthlySummaryEntities.js
 import express from "express";
 import { findMonthlyDigestByUserAndYearMonth } from "../dao/monthlyDigestsDao.js";
+import { isUserPro } from "../dao/subscriptionsDao.js";
 
 const router = express.Router();
 
@@ -37,6 +38,15 @@ router.get("/", async (req, res) => {
       return res.status(400).json({
         error: true,
         message: "year_month is required",
+      });
+    }
+
+    const pro = await isUserPro(String(user_id));
+
+    if (!pro) {
+      return res.status(403).json({
+        error: true,
+        message: "monthly summary entities are available for pro users only",
       });
     }
 
