@@ -16,6 +16,7 @@ import myPageRecentEntitiesRouter from "./routes/myPageRecentEntities.js";
 import myPageWeeklyRouter from "./routes/myPageWeekly.js";
 import myPageMonthlyRouter from "./routes/myPageMonthly.js";
 import myPageMonthlySummaryEntitiesRouter from "./routes/myPageMonthlySummaryEntities.js";
+import myPageCurrentMonthEntitiesRouter from "./routes/myPageCurrentMonthEntities.js";
 
 const app = express();
 app.use(cors());
@@ -43,6 +44,7 @@ app.use("/mypage/recent-entities", myPageRecentEntitiesRouter);
 app.use("/mypage/weekly", myPageWeeklyRouter);
 app.use("/mypage/monthly", myPageMonthlyRouter);
 app.use("/mypage/monthly-summary-entities", myPageMonthlySummaryEntitiesRouter);
+app.use("/mypage/current-month-entities", myPageCurrentMonthEntitiesRouter);
 
 // ユーザーステータス取得
 app.use("/users", usersRouter);
