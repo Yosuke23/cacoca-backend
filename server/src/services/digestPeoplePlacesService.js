@@ -18,6 +18,7 @@ import {
  * - 7日 / 月初初回の実行条件を判定する
  * - 対象日記を集約して LLM 抽出用テキストを作る
  * - PEOPLE / PLACES を別プロンプトで抽出する
+ * - 各抽出結果に log_date を持たせる
  * =====================================================
  */
 
@@ -75,16 +76,6 @@ function uniqueStrings(values) {
   return [...new Set(values)];
 }
 
-function parseBulletLines(text) {
-  const normalized = normalizeText(text);
-  if (!normalized) return [];
-
-  return normalized
-    .split("\n")
-    .map((line) => line.replace(/^[-・*]\s*/, "").trim())
-    .filter(Boolean);
-}
-
 function parseTaggedSections(text) {
   const sections = {};
   const normalized = text.replace(/\r\n/g, "\n");
@@ -108,6 +99,51 @@ function parseTaggedSections(text) {
   }
 
   return sections;
+}
+
+function isValidYmd(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function parseDateLabeledLines(text) {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+
+  return normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[-・*]\s*/, "").trim())
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      if (parts.length < 2) {
+        return null;
+      }
+
+      const logDate = parts[0];
+      const value = parts.slice(1).join(" | ").trim();
+
+      if (!isValidYmd(logDate) || !value) {
+        return null;
+      }
+
+      return {
+        log_date: logDate,
+        value,
+      };
+    })
+    .filter(Boolean);
+}
+
+function uniqueDateNamedItems(items) {
+  const seen = new Set();
+
+  return items.filter((item) => {
+    const key = `${item.log_date}__${item.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -217,11 +253,7 @@ function buildDigestSourceText(logs) {
 
 /**
  * PEOPLE 抽出
- * 定義：
- * - 日記の登場人物の名前
- * - 書かれた表現のまま
- * - さん/ちゃん/くん/様などを削らない
- * - 推測しない
+ * - 日付つきで返させる
  */
 async function extractDigestPeople(digestSourceText) {
   if (!digestSourceText) return [];
@@ -240,7 +272,8 @@ async function extractDigestPeople(digestSourceText) {
 - 正規化しない
 - 推測しない
 - 人物でないものは出さない
-- 同じ表記の重複は1回にまとめる
+- 同じ人物でも別日に出たら、日付ごとに別行で出す
+- 同じ日付・同じ表記の重複だけ1回にまとめる
 
 人物として出してはいけないもの:
 - 病院名、医院名、クリニック名、産婦人科名
@@ -258,14 +291,17 @@ async function extractDigestPeople(digestSourceText) {
 出力ルール:
 - [PEOPLE] セクションのみ
 - 1行に1件
-- 箇条書き形式
+- 形式は「YYYY-MM-DD | 人物名」
+- 必ず日付を付ける
+- 日付は、その人物が書かれている日記ブロックの [YYYY-MM-DD] をそのまま使う
+- 箇条書きでも箇条書きなしでもよい
 - 説明文や前置きは禁止
 - 該当がなければ空欄
 
 出力形式:
 [PEOPLE]
-- ...
-- ...
+2026-03-15 | 佐藤さん
+2026-03-16 | そうちゃん
 
 [日記群]
 ${digestSourceText}
@@ -273,20 +309,20 @@ ${digestSourceText}
 
   const rawText = await generateText(prompt);
   const sections = parseTaggedSections(rawText);
-  const people = uniqueStrings(parseBulletLines(sections.PEOPLE ?? ""));
+  const parsed = uniqueDateNamedItems(
+    parseDateLabeledLines(sections.PEOPLE ?? ""),
+  );
 
-  return people.map((personName) => ({
-    person_name: personName,
+  return parsed.map((item) => ({
+    log_date: item.log_date,
+    person_name: item.value,
     confidence: null,
   }));
 }
 
 /**
  * PLACES 抽出
- * 定義：
- * - 実際に行った場所
- * - 書かれた表現のまま
- * - 推測しない
+ * - 日付つきで返させる
  */
 async function extractDigestPlaces(digestSourceText) {
   if (!digestSourceText) return [];
@@ -305,7 +341,8 @@ async function extractDigestPlaces(digestSourceText) {
 - 推測しない
 - 話題に出ただけの地名は除外する
 - 実際に行ったか不明な場所は除外する
-- 同じ表記の重複は1回にまとめる
+- 同じ場所でも別日に出たら、日付ごとに別行で出す
+- 同じ日付・同じ表記の重複だけ1回にまとめる
 
 場所として扱ってよいもの:
 - 病院名、医院名、クリニック名、産婦人科名
@@ -323,14 +360,18 @@ async function extractDigestPlaces(digestSourceText) {
 出力ルール:
 - [PLACES] セクションのみ
 - 1行に1件
-- 箇条書き形式
+- 形式は「YYYY-MM-DD | 場所名」
+- 必ず日付を付ける
+- 日付は、その場所が書かれている日記ブロックの [YYYY-MM-DD] をそのまま使う
+- 箇条書きでも箇条書きなしでもよい
 - 説明文や前置きは禁止
 - 該当がなければ空欄
 
 出力形式:
 [PLACES]
-- ...
-- ...
+2026-03-15 | 職場
+2026-03-16 | イオン
+2026-03-16 | ひだまり
 
 [日記群]
 ${digestSourceText}
@@ -338,23 +379,19 @@ ${digestSourceText}
 
   const rawText = await generateText(prompt);
   const sections = parseTaggedSections(rawText);
-  const places = uniqueStrings(parseBulletLines(sections.PLACES ?? ""));
+  const parsed = uniqueDateNamedItems(
+    parseDateLabeledLines(sections.PLACES ?? ""),
+  );
 
-  return places.map((placeName) => ({
-    place_name: placeName,
+  return parsed.map((item) => ({
+    log_date: item.log_date,
+    place_name: item.value,
     confidence: null,
   }));
 }
 
 /**
  * 今回の保存時に digest 実行すべきか判定し、範囲を返す
- *
- * @returns {Promise<{
- *   should_run: boolean,
- *   reason: "seven_days" | "first_log_of_month" | null,
- *   digest_start_date: string | null,
- *   digest_end_date: string | null
- * }>}
  */
 export async function resolveDigestExecution(userId, triggerLogDate) {
   const range = await resolveDigestRange(userId, triggerLogDate);
@@ -412,15 +449,6 @@ export async function resolveDigestExecution(userId, triggerLogDate) {
 
 /**
  * 実際の digest 抽出を行う
- *
- * @returns {Promise<{
- *   digest_start_date: string,
- *   digest_end_date: string,
- *   source_log_count: number,
- *   digest_source_text: string,
- *   people: Array<{ person_name: string, confidence: number | null }>,
- *   places: Array<{ place_name: string, confidence: number | null }>
- * }>}
  */
 export async function analyzeDigestPeopleAndPlaces(
   userId,

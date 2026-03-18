@@ -23,21 +23,6 @@ import {
  * =====================================================
  */
 
-/**
- * people / places 集約処理を必要時のみ実行
- *
- * @param {string} userId
- * @param {string} triggerDate - YYYY-MM-DD
- * @returns {Promise<{
- *   ran: boolean,
- *   reason: "seven_days" | "first_log_of_month" | null,
- *   digest_start_date: string | null,
- *   digest_end_date: string | null,
- *   source_log_count: number,
- *   people_count: number,
- *   places_count: number
- * }>}
- */
 export async function runDigestPeoplePlacesIfNeeded(userId, triggerDate) {
   if (!userId || !triggerDate) {
     throw new Error(

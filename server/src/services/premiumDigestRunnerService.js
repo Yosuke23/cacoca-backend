@@ -5,7 +5,6 @@ import {
   findWeeklyDigestsByUserAndDateRange,
   deleteWeeklyDigestByUserAndWeekStartDate,
   insertWeeklyDigest,
-  // findWeeklyDigestsByUserAndDateRange,
 } from "../dao/weeklyDigestsDao.js";
 import {
   findMonthlyDigestByUserAndYearMonth,
@@ -13,15 +12,15 @@ import {
   insertMonthlyDigest,
 } from "../dao/monthlyDigestsDao.js";
 import { findDailyLogsByUserAndDateRange } from "../dao/dailyLogsDao.js";
-import { findDigestPeopleByUserAndDateRange } from "../dao/digestPeopleDao.js";
-import { findDigestPlacesByUserAndDateRange } from "../dao/digestPlacesDao.js";
+import { findDigestPeopleByUserAndLogDateRange } from "../dao/digestPeopleDao.js";
+import { findDigestPlacesByUserAndLogDateRange } from "../dao/digestPlacesDao.js";
 
 /**
  * =====================================================
  * premium digest runner service
  * =====================================================
  * 役割：
- * - 有料ユーザー向けの週次 / 月次集約を必要時のみ生成する
+ * - 週次 / 月次集約を必要時のみ生成する
  * - weekly_digests / monthly_digests に保存する
  * - 編集時には指定週 / 指定月を即再生成する
  * =====================================================
@@ -159,7 +158,7 @@ function buildPlacesSummary(placeRows) {
   return names.length > 0 ? names.join("、") : null;
 }
 
-function buildWeeklySummaryPrompt({
+function buildSummaryPrompt({
   rangeLabel,
   searchTexts,
   peopleSummary,
@@ -171,134 +170,59 @@ function buildWeeklySummaryPrompt({
   const placesBlock = placesSummary ?? "（なし）";
 
   return `
-あなたは日記アプリの週次要約を作るアシスタントです。
-以下の素材をもとに、その週の流れが自然に伝わる要約を作成してください。
-
-対象期間:
-${rangeLabel}
-
-[日記本文]
-${searchTextBlock}
-
-[登場人物]
-${peopleBlock}
-
-[行った場所]
-${placesBlock}
+あなたは日記の振り返り要約を作るアシスタントです。
+以下の素材をもとに、自然な日本語で要約を作成してください。
 
 ルール:
-- 週の主な出来事と流れを優先してまとめる
+- 誇張しない
+- 読みやすく簡潔にまとめる
+- 断定しすぎない
+- 余計な見出しは出さない
+- 要約本文のみを出力する
+- 週や月の主な出来事と流れを優先してまとめる
 - 同じ話題や似た内容は1つにまとめる
 - 長い感想文があっても、重要な傾向だけを残して簡潔にまとめる
-- 細かい枝葉より、その週を通して何をして何を感じていたかを優先する
-- 人物名や場所名は、週の流れを理解するのに必要な範囲で自然に触れる
-- 箇条書きにしない
-- 誇張しない
-- 読みやすい自然な日本語にする
-- 断定しすぎない
-- 要約本文のみを出力する
-  `.trim();
-}
+- 細かい枝葉より、その期間を通して何をして何を感じていたかを優先する
+- 人物名や場所名は、その流れを理解するのに必要な範囲で自然に触れる
 
-function buildMonthlySummaryPrompt({
-  rangeLabel,
-  weeklySummaries,
-  weeklyPeopleSummaries,
-  weeklyPlacesSummaries,
-  fallbackSearchTexts,
-  peopleSummary,
-  placesSummary,
-}) {
-  const weeklySummaryBlock =
-    weeklySummaries.length > 0
-      ? weeklySummaries.join("\n\n")
-      : fallbackSearchTexts.length > 0
-        ? fallbackSearchTexts.join("\n\n")
-        : "（なし）";
-
-  const peopleBlock =
-    weeklyPeopleSummaries.length > 0
-      ? uniqueStrings(
-          weeklyPeopleSummaries
-            .flatMap((text) => String(text).split("、"))
-            .map((item) => item.trim()),
-        ).join("、")
-      : (peopleSummary ?? "（なし）");
-
-  const placesBlock =
-    weeklyPlacesSummaries.length > 0
-      ? uniqueStrings(
-          weeklyPlacesSummaries
-            .flatMap((text) => String(text).split("、"))
-            .map((item) => item.trim()),
-        ).join("、")
-      : (placesSummary ?? "（なし）");
-
-  return `
-あなたは日記アプリの月次要約を作るアシスタントです。
-以下の素材をもとに、その月の流れが自然に伝わる要約を作成してください。
-
-対象期間:
+[対象期間]
 ${rangeLabel}
 
-[週ごとの要約 / 月内素材]
-${weeklySummaryBlock}
+[日記本文素材]
+${searchTextBlock}
 
-[登場人物]
+[登場人物素材]
 ${peopleBlock}
 
-[行った場所]
+[場所素材]
 ${placesBlock}
-
-ルール:
-- 月全体の流れを優先してまとめる
-- 似た内容は1つにまとめる
-- 細かい出来事の羅列ではなく、その月がどんな月だったかが伝わる文章にする
-- 人物名や場所名は、月の流れを理解するのに必要な範囲で自然に触れる
-- 箇条書きにしない
-- 誇張しない
-- 読みやすい自然な日本語にする
-- 断定しすぎない
-- 要約本文のみを出力する
   `.trim();
 }
 
 async function generateWeeklySummaryText(params) {
-  const prompt = buildWeeklySummaryPrompt(params);
+  const prompt = buildSummaryPrompt(params);
   const text = await generateText(prompt);
   return text.trim() || null;
 }
 
 async function generateMonthlySummaryText(params) {
-  const prompt = buildMonthlySummaryPrompt(params);
+  const prompt = buildSummaryPrompt(params);
   const text = await generateText(prompt);
   return text.trim() || null;
 }
 
+/**
+ * exact な日付範囲で weekly/monthly 用素材を取る
+ * people / places は log_date ベース
+ */
 async function collectDigestSourceMaterials(userId, startDate, endDate) {
   const [logs, peopleRows, placeRows] = await Promise.all([
     findDailyLogsByUserAndDateRange(userId, startDate, endDate),
-    findDigestPeopleByUserAndDateRange(userId, startDate, endDate),
-    findDigestPlacesByUserAndDateRange(userId, startDate, endDate),
+    findDigestPeopleByUserAndLogDateRange(userId, startDate, endDate),
+    findDigestPlacesByUserAndLogDateRange(userId, startDate, endDate),
   ]);
 
   return {
-    logs,
-    peopleRows,
-    placeRows,
-  };
-}
-
-async function collectMonthlySourceMaterials(userId, startDate, endDate) {
-  const [weeklyRows, logs, peopleRows, placeRows] = await Promise.all([
-    findWeeklyDigestsByUserAndDateRange(userId, startDate, endDate),
-    findDailyLogsByUserAndDateRange(userId, startDate, endDate),
-    findDigestPeopleByUserAndDateRange(userId, startDate, endDate),
-    findDigestPlacesByUserAndDateRange(userId, startDate, endDate),
-  ]);
-
-  return {
-    weeklyRows,
     logs,
     peopleRows,
     placeRows,
@@ -344,36 +268,28 @@ async function buildMonthlyDigestPayload(
   monthStartDate,
   monthEndDate,
 ) {
-  const materials = await collectMonthlySourceMaterials(
-    userId,
-    monthStartDate,
-    monthEndDate,
-  );
+  const [materials, weeklyRows] = await Promise.all([
+    collectDigestSourceMaterials(userId, monthStartDate, monthEndDate),
+    findWeeklyDigestsByUserAndDateRange(userId, monthStartDate, monthEndDate),
+  ]);
 
-  const hasWeeklyRows = materials.weeklyRows.length > 0;
-  const hasFallbackLogs = materials.logs.length > 0;
-
-  if (!hasWeeklyRows && !hasFallbackLogs) {
+  if (materials.logs.length === 0) {
     return null;
   }
 
   const peopleSummary = buildPeopleSummary(materials.peopleRows);
   const placesSummary = buildPlacesSummary(materials.placeRows);
 
+  const weeklySummaryTexts = weeklyRows
+    .map((row) => row.did_summary)
+    .filter(Boolean);
+
   const summaryText = await generateMonthlySummaryText({
     rangeLabel: `${monthStartDate} 〜 ${monthEndDate}`,
-    weeklySummaries: materials.weeklyRows
-      .map((row) => row.did_summary)
-      .filter(Boolean),
-    weeklyPeopleSummaries: materials.weeklyRows
-      .map((row) => row.people_summary)
-      .filter(Boolean),
-    weeklyPlacesSummaries: materials.weeklyRows
-      .map((row) => row.places_summary)
-      .filter(Boolean),
-    fallbackSearchTexts: materials.logs
-      .map((log) => log.search_text)
-      .filter(Boolean),
+    searchTexts:
+      weeklySummaryTexts.length > 0
+        ? weeklySummaryTexts
+        : materials.logs.map((log) => log.search_text).filter(Boolean),
     peopleSummary,
     placesSummary,
   });
@@ -386,14 +302,12 @@ async function buildMonthlyDigestPayload(
     summary_text: summaryText,
     people_summary: peopleSummary,
     places_summary: placesSummary,
-    source_log_count: hasWeeklyRows
-      ? materials.weeklyRows.length
-      : materials.logs.length,
+    source_log_count: materials.logs.length,
   };
 }
 
 /**
- * 指定週を即再生成（有料ユーザーのみ）
+ * 指定週を即再生成
  */
 export async function regenerateWeeklyDigestForTargetDateIfPro(
   userId,
@@ -432,7 +346,7 @@ export async function regenerateWeeklyDigestForTargetDateIfPro(
 }
 
 /**
- * 指定月を即再生成（有料ユーザーのみ）
+ * 指定月を即再生成
  */
 export async function regenerateMonthlyDigestForTargetDateIfPro(
   userId,
@@ -572,7 +486,7 @@ async function runMonthlyDigestIfNeeded(userId, triggerDate) {
 }
 
 /**
- * 有料ユーザー向け週次 / 月次集約を必要時のみ実行
+ * 週次 / 月次集約を必要時のみ実行
  *
  * @param {string} userId
  * @param {string} triggerDate - YYYY-MM-DD

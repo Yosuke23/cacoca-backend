@@ -2,8 +2,14 @@
 import { pool } from "../db/pool.js";
 
 /**
- * ユーザーの最新 digest_places を取得
+ * =====================================================
+ * digest places dao
+ * =====================================================
+ * 役割：
+ * - digest_places テーブル操作
+ * =====================================================
  */
+
 export async function findLatestDigestPlacesByUserId(userId) {
   if (!userId) {
     throw new Error("findLatestDigestPlacesByUserId: userId is required");
@@ -25,102 +31,8 @@ export async function findLatestDigestPlacesByUserId(userId) {
 }
 
 /**
- * 期間一致の digest_places を削除
- */
-export async function deleteDigestPlacesByUserAndPeriod(
-  userId,
-  digestStartDate,
-  digestEndDate,
-) {
-  if (!userId || !digestStartDate || !digestEndDate) {
-    throw new Error(
-      "deleteDigestPlacesByUserAndPeriod: userId, digestStartDate, digestEndDate are required",
-    );
-  }
-
-  await pool.query(
-    `
-    DELETE FROM digest_places
-    WHERE user_id = $1
-      AND digest_start_date = $2
-      AND digest_end_date = $3
-    `,
-    [userId, digestStartDate, digestEndDate],
-  );
-}
-
-/**
- * digest_places 一括INSERT
- *
- * @param {string} userId
- * @param {string} digestStartDate
- * @param {string} digestEndDate
- * @param {Array<{ place_name: string, confidence?: number | null }>} places
- * @param {number} sourceLogCount
- * @returns {Promise<object[]>}
- */
-export async function insertDigestPlaces(
-  userId,
-  digestStartDate,
-  digestEndDate,
-  places,
-  sourceLogCount,
-) {
-  if (!userId || !digestStartDate || !digestEndDate) {
-    throw new Error(
-      "insertDigestPlaces: userId, digestStartDate, digestEndDate are required",
-    );
-  }
-
-  if (!Array.isArray(places)) {
-    throw new Error("insertDigestPlaces: places must be an array");
-  }
-
-  if (places.length === 0) {
-    return [];
-  }
-
-  const values = [];
-  const params = [];
-
-  places.forEach((place, index) => {
-    const base = index * 6;
-
-    values.push(
-      `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`,
-    );
-
-    params.push(
-      userId,
-      digestStartDate,
-      digestEndDate,
-      place.place_name,
-      place.confidence ?? null,
-      sourceLogCount,
-    );
-  });
-
-  const result = await pool.query(
-    `
-    INSERT INTO digest_places (
-      user_id,
-      digest_start_date,
-      digest_end_date,
-      place_name,
-      confidence,
-      source_log_count
-    )
-    VALUES ${values.join(", ")}
-    RETURNING *
-    `,
-    params,
-  );
-
-  return result.rows;
-}
-
-/**
- * 指定期間に重なる digest_places を取得
+ * 旧: digest期間重なりベース取得
+ * ※ 今は後方互換のため残す
  */
 export async function findDigestPlacesByUserAndDateRange(
   userId,
@@ -129,7 +41,7 @@ export async function findDigestPlacesByUserAndDateRange(
 ) {
   if (!userId || !startDate || !endDate) {
     throw new Error(
-      "findDigestPlacesByUserAndDateRange: userId, startDate, endDate are required",
+      "findDigestPlacesByUserAndDateRange: userId, startDate and endDate are required",
     );
   }
 
@@ -150,15 +62,17 @@ export async function findDigestPlacesByUserAndDateRange(
 }
 
 /**
- * 指定日を含む digest_places の最新期間を取得
+ * 新: log_date ベース取得
+ * weekly / monthly の exact 集計用
  */
-export async function findDigestPlacesPeriodByUserAndTargetDate(
+export async function findDigestPlacesByUserAndLogDateRange(
   userId,
-  targetDate,
+  startDate,
+  endDate,
 ) {
-  if (!userId || !targetDate) {
+  if (!userId || !startDate || !endDate) {
     throw new Error(
-      "findDigestPlacesPeriodByUserAndTargetDate: userId and targetDate are required",
+      "findDigestPlacesByUserAndLogDateRange: userId, startDate and endDate are required",
     );
   }
 
@@ -167,43 +81,102 @@ export async function findDigestPlacesPeriodByUserAndTargetDate(
     SELECT *
     FROM digest_places
     WHERE user_id = $1
-      AND digest_start_date <= $2
-      AND digest_end_date >= $2
+      AND log_date >= $2
+      AND log_date <= $3
       AND is_deleted = false
-    ORDER BY digest_end_date DESC, created_at DESC
-    LIMIT 1
+    ORDER BY log_date ASC, created_at ASC
     `,
-    [userId, targetDate],
+    [userId, startDate, endDate],
   );
 
-  return result.rows[0] ?? null;
+  return result.rows;
 }
 
-/**
- * 最新期間の digest_places 一覧を取得
- */
-export async function findLatestDigestPlacesRowsByUserId(userId) {
-  if (!userId) {
-    throw new Error("findLatestDigestPlacesRowsByUserId: userId is required");
+export async function deleteDigestPlacesByUserAndPeriod(
+  userId,
+  digestStartDate,
+  digestEndDate,
+) {
+  if (!userId || !digestStartDate || !digestEndDate) {
+    throw new Error(
+      "deleteDigestPlacesByUserAndPeriod: userId, digestStartDate and digestEndDate are required",
+    );
   }
 
-  const latest = await findLatestDigestPlacesByUserId(userId);
-
-  if (!latest) {
-    return [];
-  }
-
-  const result = await pool.query(
+  await pool.query(
     `
-    SELECT *
-    FROM digest_places
+    DELETE FROM digest_places
     WHERE user_id = $1
       AND digest_start_date = $2
       AND digest_end_date = $3
-      AND is_deleted = false
-    ORDER BY created_at ASC
     `,
-    [userId, latest.digest_start_date, latest.digest_end_date],
+    [userId, digestStartDate, digestEndDate],
+  );
+}
+
+export async function insertDigestPlaces(
+  userId,
+  digestStartDate,
+  digestEndDate,
+  places,
+  sourceLogCount,
+) {
+  if (!userId || !digestStartDate || !digestEndDate) {
+    throw new Error(
+      "insertDigestPlaces: userId, digestStartDate and digestEndDate are required",
+    );
+  }
+
+  if (!Array.isArray(places) || places.length === 0) {
+    return [];
+  }
+
+  const values = [];
+  const params = [];
+
+  places.forEach((place, index) => {
+    const base = index * 8;
+
+    values.push(
+      `(
+        $${base + 1},
+        $${base + 2},
+        $${base + 3},
+        $${base + 4},
+        $${base + 5},
+        $${base + 6},
+        $${base + 7},
+        NOW()
+      )`,
+    );
+
+    params.push(
+      userId,
+      digestStartDate,
+      digestEndDate,
+      place.log_date ?? null,
+      place.place_name,
+      place.confidence ?? null,
+      sourceLogCount,
+    );
+  });
+
+  const result = await pool.query(
+    `
+    INSERT INTO digest_places (
+      user_id,
+      digest_start_date,
+      digest_end_date,
+      log_date,
+      place_name,
+      confidence,
+      source_log_count,
+      created_at
+    )
+    VALUES ${values.join(",")}
+    RETURNING *
+    `,
+    params,
   );
 
   return result.rows;
