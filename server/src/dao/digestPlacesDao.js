@@ -135,19 +135,19 @@ export async function insertDigestPlaces(
   const params = [];
 
   places.forEach((place, index) => {
-    const base = index * 8;
+    const base = index * 7;
 
     values.push(
       `(
-        $${base + 1},
-        $${base + 2},
-        $${base + 3},
-        $${base + 4},
-        $${base + 5},
-        $${base + 6},
-        $${base + 7},
-        NOW()
-      )`,
+      $${base + 1},
+      $${base + 2},
+      $${base + 3},
+      $${base + 4},
+      $${base + 5},
+      $${base + 6},
+      $${base + 7},
+      NOW()
+    )`,
     );
 
     params.push(
