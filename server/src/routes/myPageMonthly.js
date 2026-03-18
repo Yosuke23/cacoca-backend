@@ -1,6 +1,5 @@
 // server/src/routes/myPageMonthly.js
 import express from "express";
-import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
 import { findMonthlyDigestByUserAndYearMonth } from "../dao/monthlyDigestsDao.js";
 
@@ -48,16 +47,6 @@ router.get("/", async (req, res) => {
     }
 
     const triggerDate = formatTodayJst();
-
-    try {
-      await runDerivedJobsIfNeeded(user_id, triggerDate);
-    } catch (derivedJobsError) {
-      console.error(
-        "GET /mypage/monthly derived jobs error:",
-        derivedJobsError,
-      );
-    }
-
     const previousYearMonth = getPreviousMonthYearMonth(triggerDate);
     const monthlyDigest = await findMonthlyDigestByUserAndYearMonth(
       user_id,

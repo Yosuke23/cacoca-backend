@@ -1,6 +1,5 @@
 // server/src/routes/myPageWeekly.js
 import express from "express";
-import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
 import { isUserPro } from "../dao/subscriptionsDao.js";
 import { findWeeklyDigestByUserAndWeekStartDate } from "../dao/weeklyDigestsDao.js";
 
@@ -73,13 +72,6 @@ router.get("/", async (req, res) => {
     }
 
     const triggerDate = formatTodayJst();
-
-    try {
-      await runDerivedJobsIfNeeded(user_id, triggerDate);
-    } catch (derivedJobsError) {
-      console.error("GET /mypage/weekly derived jobs error:", derivedJobsError);
-    }
-
     const previousWeek = getPreviousWeekRange(triggerDate);
     const weeklyDigest = await findWeeklyDigestByUserAndWeekStartDate(
       user_id,

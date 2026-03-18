@@ -1,6 +1,5 @@
 // server/src/routes/myPageRecentEntities.js
 import express from "express";
-import { runDerivedJobsIfNeeded } from "../services/runDerivedJobsService.js";
 import { findDigestPeopleByUserAndDateRange } from "../dao/digestPeopleDao.js";
 import { findDigestPlacesByUserAndDateRange } from "../dao/digestPlacesDao.js";
 
@@ -57,16 +56,6 @@ router.get("/", async (req, res) => {
     }
 
     const triggerDate = formatTodayJst();
-
-    try {
-      await runDerivedJobsIfNeeded(user_id, triggerDate);
-    } catch (derivedJobsError) {
-      console.error(
-        "GET /mypage/recent-entities derived jobs error:",
-        derivedJobsError,
-      );
-    }
-
     const currentMonth = getCurrentMonthRange(triggerDate);
 
     const [peopleRows, placeRows] = await Promise.all([
