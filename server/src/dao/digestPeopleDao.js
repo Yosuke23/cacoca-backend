@@ -181,3 +181,30 @@ export async function insertDigestPeople(
 
   return result.rows;
 }
+
+export async function findDigestPeoplePeriodByUserAndTargetDate(
+  userId,
+  targetDate,
+) {
+  if (!userId || !targetDate) {
+    throw new Error(
+      "findDigestPeoplePeriodByUserAndTargetDate: userId and targetDate are required",
+    );
+  }
+
+  const result = await pool.query(
+    `
+    SELECT DISTINCT digest_start_date, digest_end_date
+    FROM digest_people
+    WHERE user_id = $1
+      AND digest_start_date <= $2
+      AND digest_end_date >= $2
+      AND is_deleted = false
+    ORDER BY digest_start_date DESC
+    LIMIT 1
+    `,
+    [userId, targetDate],
+  );
+
+  return result.rows[0] ?? null;
+}
