@@ -181,3 +181,30 @@ export async function insertDigestPlaces(
 
   return result.rows;
 }
+
+export async function findDigestPlacesPeriodByUserAndTargetDate(
+  userId,
+  targetDate,
+) {
+  if (!userId || !targetDate) {
+    throw new Error(
+      "findDigestPlacesPeriodByUserAndTargetDate: userId and targetDate are required",
+    );
+  }
+
+  const result = await pool.query(
+    `
+    SELECT DISTINCT digest_start_date, digest_end_date
+    FROM digest_places
+    WHERE user_id = $1
+      AND digest_start_date <= $2
+      AND digest_end_date >= $2
+      AND is_deleted = false
+    ORDER BY digest_start_date DESC
+    LIMIT 1
+    `,
+    [userId, targetDate],
+  );
+
+  return result.rows[0] ?? null;
+}
