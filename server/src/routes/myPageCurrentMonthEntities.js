@@ -51,13 +51,20 @@ function splitSummaryText(value) {
   if (!value || typeof value !== "string") {
     return [];
   }
-
   return uniqueStrings(
     value
       .split("、")
       .map((item) => item.trim())
       .filter((item) => item.length > 0),
   );
+}
+
+function formatDateOnly(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return formatDateToYmd(value);
+  }
+  return String(value).slice(0, 10);
 }
 
 /**
@@ -98,6 +105,32 @@ router.get("/", async (req, res) => {
       month_end_date,
     );
 
+    const sourcePeriodStartDate =
+      weeklyRows.length > 0
+        ? weeklyRows
+            .map((row) => row.week_start_date)
+            .filter(Boolean)
+            .sort()[0]
+        : null;
+
+    const sourcePeriodEndDate =
+      weeklyRows.length > 0
+        ? weeklyRows
+            .map((row) => row.week_end_date)
+            .filter(Boolean)
+            .sort()
+            .slice(-1)[0]
+        : null;
+
+    const lastUpdatedAt =
+      weeklyRows.length > 0
+        ? weeklyRows
+            .map((row) => row.generated_at || row.created_at)
+            .filter(Boolean)
+            .sort()
+            .slice(-1)[0]
+        : null;
+
     const people = uniqueStrings(
       weeklyRows.flatMap((row) => splitSummaryText(row.people_summary)),
     ).map((name, index) => ({
@@ -115,6 +148,9 @@ router.get("/", async (req, res) => {
     return res.json({
       message: "current month entities fetched",
       data: {
+        source_period_start_date: formatDateOnly(sourcePeriodStartDate),
+        source_period_end_date: formatDateOnly(sourcePeriodEndDate),
+        last_updated_at: formatDateOnly(lastUpdatedAt),
         year_month,
         people,
         places,
