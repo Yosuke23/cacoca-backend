@@ -34,18 +34,12 @@ router.post("/", async (req, res) => {
     const count = await countLogsByUserAndDate(user_id, log_date);
 
     if (count >= 1) {
-      const isPro = await isUserPro(user_id);
-
-      if (!isPro) {
-        return res.status(403).json({
-          error: true,
-          code: "DAILY_LIMIT_EXCEEDED",
-          message:
-            "本日のログはすでに作成済みです。有料プランで複数作成できます。",
-        });
-      }
+      return res.status(403).json({
+        error: true,
+        code: "DAILY_LIMIT_EXCEEDED",
+        message: "本日のログはすでに作成済みです。",
+      });
     }
-
     const saved = await insertDailyLog({
       user_id,
       log_date,
