@@ -5,7 +5,7 @@ import "dotenv/config";
 import express from "express";
 // import summarizeRoute from "./routes/summarize.js";
 import cors from "cors";
-import ipFilter from "./middleware/ipFilter.js";
+// import ipFilter from "./middleware/ipFilter.js";
 import { checkDbConnection } from "./db/pool.js";
 import dailyLogsRouter from "./routes/dailyLogs.js";
 import warmupRouter from "./routes/warmup.js";
@@ -53,7 +53,7 @@ app.use((req, res, next) => {
 // Warm up for render free plan※Warm up だけは IPフィルタの前に置く（=除外される）
 app.use("/warmup", warmupRouter);
 // ★ IPフィルタをすべてのAPIに適用
-app.use(ipFilter);
+// app.use(ipFilter);
 
 // 商用向け改修時外す
 app.use("/test-users", testUsersRouter);
