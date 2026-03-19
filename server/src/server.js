@@ -19,7 +19,28 @@ import myPageMonthlySummaryEntitiesRouter from "./routes/myPageMonthlySummaryEnt
 import myPageCurrentMonthEntitiesRouter from "./routes/myPageCurrentMonthEntities.js";
 
 const app = express();
-app.use(cors());
+const allowedOrigins = [
+  "https://cacoca-frontend-28zzh95hc-yosuke23s-projects.vercel.app",
+  "http://localhost:3000",
+];
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 app.use(express.json());
 
 // === クライアントIP確認ログ（ipFilterの動作確認のためのログ） ===
