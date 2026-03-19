@@ -20,7 +20,7 @@ export async function findDailyLogsByUser(user_id) {
     FROM daily_logs
     WHERE user_id = $1
       AND is_deleted = false
-    ORDER BY created_at DESC
+    ORDER BY log_date DESC
     `,
     [user_id],
   );
