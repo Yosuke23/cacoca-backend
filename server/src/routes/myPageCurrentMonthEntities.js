@@ -86,15 +86,6 @@ router.get("/", async (req, res) => {
       });
     }
 
-    const pro = await isUserPro(String(user_id));
-
-    if (!pro) {
-      return res.status(403).json({
-        error: true,
-        message: "current month entities are available for pro users only",
-      });
-    }
-
     const triggerDate = formatTodayJst();
     const { year_month, month_start_date, month_end_date } =
       getCurrentYearMonthAndRange(triggerDate);
