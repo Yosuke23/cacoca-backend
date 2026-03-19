@@ -21,6 +21,7 @@ import myPageCurrentMonthEntitiesRouter from "./routes/myPageCurrentMonthEntitie
 const app = express();
 const allowedOrigins = [
   "https://cacoca-frontend-28zzh95hc-yosuke23s-projects.vercel.app",
+  "https://cacoca-frontend-na8aegb2e-yosuke23s-projects.vercel.app",
   "http://localhost:3000",
 ];
 app.use(
